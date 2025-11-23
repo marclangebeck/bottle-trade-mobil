@@ -3,7 +3,7 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, StatusB
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
 
-export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unreadNotifications = 0, isLoggedIn = false }) {
+export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   // Mock-Daten
   const user = {
@@ -20,27 +20,12 @@ export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unr
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
-      
-      {/* StatusBar-Ersatz für iPhone */}
-      <View style={{
-        height: Platform.OS === 'ios' ? 60 : 0,
-        backgroundColor: '#2c2c2c',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.2)'
-      }} />
-      
       <DynamicHamburgerMenu 
         onNavigate={onNavigate || (() => {})} 
         isLoggedIn={true} 
         onLogout={onLogout || (() => {})} 
         isAdmin={isAdmin} 
-        unreadNotifications={unreadNotifications}
+        unreadCount={unreadCount}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -98,7 +83,11 @@ export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unr
         </View>
       </View>
       </ScrollView>
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+      <BottomNavigation
+        onNavigate={onNavigate}
+        isLoggedIn={isLoggedIn}
+        unreadCount={unreadCount}
+      />
     </View>
   );
 }
@@ -123,16 +112,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
     position: 'relative',
     marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    minHeight: 90,
+    borderTopWidth: 0,
+    borderBottomWidth: 0,
+    // Glassmorphism Effekt
+    shadowColor: '#DAA520',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   hamburgerContainer: {
     flex: 0,
@@ -147,7 +140,7 @@ const styles = StyleSheet.create({
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -161,9 +154,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerGreeting: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2c2c2c', // Dunkler Text auf hellem Header
     textAlign: 'center',
   },
   statsCard: {
@@ -174,7 +167,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     elevation: 5,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
   },

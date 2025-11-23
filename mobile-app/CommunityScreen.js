@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -8,13 +8,20 @@ import {
   Platform,
   Alert
 } from 'react-native';
+import OptimizedImage from './components/OptimizedImage';
 import Footer from './Footer';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
-import NotificationBadge from './components/NotificationBadge';
 import BottomNavigation from './components/BottomNavigation';
+import { getCurrentUser } from './services/testAuth';
 
-export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false, unreadNotifications = 0, isLoggedIn = false }) {
+export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false, unreadNotifications = 0, unreadHints = 0, isLoggedIn = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [userBtp, setUserBtp] = useState(0);
+
+  useEffect(() => {
+    const user = getCurrentUser();
+    setUserBtp(user?.btp ?? 0);
+  }, []);
   
   const communitySections = [
     {
@@ -75,13 +82,7 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
       <View style={{
         height: Platform.OS === 'ios' ? 60 : 0,
         backgroundColor: '#2c2c2c',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.2)'
+        width: '100%',
       }} />
       
       <DynamicHamburgerMenu 
@@ -96,32 +97,61 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
       />
       
       <View style={styles.contentContainer}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.hamburgerContainer}>
-            <TouchableOpacity 
-              style={styles.hamburgerButton}
-              onPress={() => setIsMenuVisible(!isMenuVisible)}
+        {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+        <View style={styles.logoHeaderContainer}>
+          {/* Hamburger-Menü links */}
+          <View style={styles.headerLeft}>
+            <View style={styles.hamburgerContainer}>
+              <TouchableOpacity 
+                style={styles.hamburgerButton}
+                onPress={() => setIsMenuVisible(!isMenuVisible)}
+              >
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.wishlistButton}
+              onPress={() => onNavigate('wunschliste')}
             >
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
+              <Text style={styles.wishlistHeart}>♡</Text>
             </TouchableOpacity>
           </View>
+          
+          {/* Bottle (Logo) Trade in der Mitte */}
+          <View style={styles.logoHeaderCenter}>
+            <Text style={styles.logoHeaderText}>Bottle</Text>
+            <View style={styles.logoImageWrapper}>
+              <OptimizedImage
+                source={require('./assets/images/Logo_white.png')}
+                style={styles.logoHeaderImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.logoHeaderText}>Trade</Text>
+          </View>
+          
+          {/* Profil-Icon rechts */}
+          <View style={styles.profileSection}>
+            <TouchableOpacity 
+              style={styles.profileIconContainer}
+              onPress={() => onNavigate('profil')}
+            >
+              <View style={styles.profileIconCircle}>
+                <Text style={styles.profileIconText}>P</Text>
+              </View>
+            </TouchableOpacity>
+            <View style={styles.profileBtpBadge}>
+              <Text style={styles.profileBtpText}>{`${userBtp} BTP`}</Text>
+            </View>
+          </View>
+        </View>
+        
+        {/* Header mit Überschrift */}
+        <View style={styles.header}>
           <View style={styles.headerCenter}>
             <Text style={styles.greeting}>Community</Text>
-          </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity 
-              style={styles.notificationButton}
-              onPress={() => onNavigate('notifications')}
-            >
-              <Text style={styles.notificationIcon}>🔔</Text>
-              <NotificationBadge 
-                count={unreadNotifications}
-                onPress={() => onNavigate('notifications')}
-              />
-            </TouchableOpacity>
           </View>
         </View>
           
@@ -184,7 +214,12 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
       <Footer />
       
       {/* Fixed Bottom Navigation */}
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+      <BottomNavigation
+        onNavigate={onNavigate}
+        isLoggedIn={isLoggedIn}
+        unreadNotifications={unreadNotifications}
+        unreadHints={unreadHints}
+      />
     </View>
   );
 }
@@ -192,28 +227,116 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   contentContainer: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
+  },
+  logoHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
+    paddingBottom: 10,
+  },
+  headerLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+  },
+  logoHeaderCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  logoHeaderText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 12,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileIconContainer: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  profileIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  profileSection: {
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileBtpBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#DAA520',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  profileBtpText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2c2c2c',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   // Header Styles
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#2c2c2c',
     position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
+    marginTop: 0,
+    minHeight: 60,
+    borderTopWidth: 0,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   hamburgerContainer: {
     flex: 0,
@@ -221,6 +344,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     width: 40,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
     padding: 5,
@@ -231,6 +355,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
+  },
+  wishlistButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wishlistHeart: {
+    fontSize: 24,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   headerCenter: {
     flex: 1,
@@ -258,21 +393,27 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     borderRadius: 22.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(218, 165, 32, 0.3)', // Warmes Gold
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(218, 165, 32, 0.5)',
   },
   dashboardButtonText: {
     fontSize: 22,
-    color: '#FFFFFF',
+    color: '#2c2c2c', // Dunkler Text
   },
   greeting: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize: 30,
+    fontWeight: '600',
+    color: '#DAA520', // Warmes Gold
     textAlign: 'center',
+    letterSpacing: 0.5,
+    // Eleganter Gradient-Effekt durch Text-Shadow
+    textShadowColor: 'rgba(218, 165, 32, 0.6)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+    includeFontPadding: false,
   },
   content: {
     flex: 1,
@@ -295,7 +436,7 @@ const styles = StyleSheet.create({
     padding: 20,
     marginHorizontal: 5,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: '#FFFFFF', // Weiße Border
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,

@@ -1,5 +1,5 @@
 // Test-Auth Service (simuliert Authentication ohne Firebase Auth)
-import { createUser, getUser } from './database-web';
+import { createUser, getUser, getUserByEmailOrUsername } from './database-web';
 
 // Test-User-Daten
 let currentLoggedInUser = null; // Aktuell eingeloggter User
@@ -15,11 +15,9 @@ const ensureTestUsersExist = async (testUsers) => {
     for (const [email, userData] of Object.entries(testUsers)) {
       const existingUser = await getUser(userData.uid);
       if (!existingUser) {
-        console.log(`🔄 Creating test user in database: ${email}`);
-        await createUser(userData.uid, userData);
+        await createUser(userData);
       }
     }
-    console.log('✅ All test users ensured in database');
   } catch (error) {
     console.error('❌ Error ensuring test users:', error);
   }
@@ -80,42 +78,34 @@ const testUsers = {
 };
 
 // Beim ersten Import sicherstellen, dass Test-User existieren
-ensureTestUsersExist(testUsers);
+// DEAKTIVIERT: Nur noch Registrierung über RegisterScreen erlaubt
+// ensureTestUsersExist(testUsers);
 
 // ===== TEST AUTHENTICATION FUNCTIONS =====
 
 export const loginUser = async (emailOrUsername, password) => {
   try {
-    console.log('🔄 Test login:', emailOrUsername);
+    // Suche nur in Firestore
+    const user = await getUserByEmailOrUsername(emailOrUsername);
     
-    // Suche nach E-Mail oder Benutzername
-    let user = null;
-    
-    // Erst nach E-Mail suchen
-    if (emailOrUsername.includes('@')) {
-      user = testUsers[emailOrUsername];
-    } else {
-      // Dann nach Benutzername suchen
-      user = Object.values(testUsers).find(u => u.username === emailOrUsername);
-    }
-    
-    if (!user || user.password !== password) {
+    if (!user) {
       throw new Error('Invalid credentials');
     }
     
-    console.log('✅ Test user logged in:', user.uid);
+    // Prüfe Passwort
+    if (!user.password || user.password !== password) {
+      throw new Error('Invalid credentials');
+    }
     
-    // Aktuellen User setzen
+    // Aktuellen User setzen (nur für Session-Management)
     currentLoggedInUser = user;
     
-    // User-Profil aus Firestore laden (falls vorhanden)
-    const userProfile = await getUser(user.uid);
-    
+    // User-Profil aus Firestore zurückgeben
     return {
       uid: user.uid,
       email: user.email,
       emailVerified: true,
-      profile: userProfile || user
+      profile: user
     };
     
   } catch (error) {
@@ -126,14 +116,21 @@ export const loginUser = async (emailOrUsername, password) => {
 
 export const registerUser = async (email, password, userData) => {
   try {
-    console.log('🔄 Test register:', email);
-    
-    // Prüfen ob User bereits existiert
-    if (testUsers[email]) {
+    // Prüfe in Firestore ob User bereits existiert
+    const existingUser = await getUserByEmailOrUsername(email);
+    if (existingUser) {
       throw new Error('User already exists');
     }
     
-    // Neuen Test-User erstellen
+    // Prüfe auch Username in Firestore
+    if (userData.username) {
+      const existingUsername = await getUserByEmailOrUsername(userData.username);
+      if (existingUsername) {
+        throw new Error('Username already exists');
+      }
+    }
+    
+    // Neuen User erstellen
     const newUser = {
       uid: `user-${Date.now()}`,
       email: email,
@@ -147,16 +144,11 @@ export const registerUser = async (email, password, userData) => {
       wishlist: false
     };
     
-    // User zu Test-Users hinzufügen
-    testUsers[email] = newUser;
-    
-    // Aktuellen User setzen (automatischer Login nach Registrierung)
-    currentLoggedInUser = newUser;
-    
     // User-Profil in Firestore erstellen
     const userId = await createUser(newUser);
     
-    console.log('✅ Test user registered:', userId);
+    // Aktuellen User setzen (automatischer Login nach Registrierung)
+    currentLoggedInUser = newUser;
     
     return {
       uid: newUser.uid,
@@ -173,10 +165,8 @@ export const registerUser = async (email, password, userData) => {
 
 export const logoutUser = async () => {
   try {
-    console.log('🔄 Test logout');
     // Aktuellen User zurücksetzen
     currentLoggedInUser = null;
-    console.log('✅ Test user logged out');
   } catch (error) {
     console.error('❌ Error logging out user:', error);
     throw error;
@@ -226,3 +216,5 @@ export const sendPasswordReset = async (email) => {
     throw error;
   }
 };
+
+

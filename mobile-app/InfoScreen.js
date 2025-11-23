@@ -5,17 +5,14 @@ import {
   TouchableOpacity, 
   ScrollView, 
   StyleSheet,
-  Image,
-  Platform
+  Platform,
+  KeyboardAvoidingView
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import DynamicHamburgerMenu from './DynamicHamburgerMenu';
-import Footer from './Footer';
-import BottomNavigation from './components/BottomNavigation';
+import OptimizedImage from './components/OptimizedImage';
 
-export default function InfoScreen({ onNavigate, onShowRegister, isLoggedIn }) {
+export default function InfoScreen({ onNavigate, onShowRegister }) {
   const [expandedSections, setExpandedSections] = useState({});
-  const [isMenuVisible, setIsMenuVisible] = useState(false);
 
   const toggleSection = (sectionId) => {
     setExpandedSections(prev => ({
@@ -70,7 +67,7 @@ export default function InfoScreen({ onNavigate, onShowRegister, isLoggedIn }) {
       return section.content.map((item, index) => (
         <View key={index} style={styles.contentCard}>
           {item.icon && <Text style={styles.contentIcon}>{item.icon}</Text>}
-          <View style={styles.contentText}>
+          <View style={styles.contentTextContainer}>
             <Text style={[styles.contentTitle, { color: item.color || '#FFFFFF' }]}>{item.title}</Text>
             <Text style={styles.contentDescription}>{item.desc}</Text>
           </View>
@@ -80,62 +77,61 @@ export default function InfoScreen({ onNavigate, onShowRegister, isLoggedIn }) {
     return <Text style={styles.contentText}>{section.content}</Text>;
   };
 
-   return (
-     <View style={{
-       flex: 1,
-       backgroundColor: '#d5dfe0', // Neue Primärfarbe
-     }}>
-       {/* StatusBar-Ersatz für iPhone */}
-       <View style={{
-         height: Platform.OS === 'ios' ? 60 : 0,
-         backgroundColor: '#2c2c2c',
-         position: 'absolute',
-         top: 0,
-         left: 0,
-         right: 0,
-         zIndex: 1000,
-         borderBottomWidth: 1,
-         borderBottomColor: 'rgba(255, 255, 255, 0.2)'
-       }} />
-       <DynamicHamburgerMenu 
-         onNavigate={onNavigate} 
-         isLoggedIn={false} 
-         onLogout={() => {}} 
-         isAdmin={false} 
-         unreadNotifications={0}
-         renderButton={false}
-         externalMenuVisible={isMenuVisible}
-         onMenuToggle={setIsMenuVisible}
-       />
-       
-       {/* Header */}
-       <View style={styles.header}>
-         <View style={styles.hamburgerContainer}>
-           <TouchableOpacity 
-             style={styles.hamburgerButton}
-             onPress={() => setIsMenuVisible(!isMenuVisible)}
-           >
-             <View style={styles.hamburgerLine} />
-             <View style={styles.hamburgerLine} />
-             <View style={styles.hamburgerLine} />
-           </TouchableOpacity>
-         </View>
-         <View style={styles.headerCenter}>
-           <Text style={styles.greeting}>Info</Text>
-         </View>
-         <View style={styles.headerRight} />
-       </View>
+  return (
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      {/* Subtiler Hintergrund-Gradient für Glassmorphismus-Effekt */}
+      <LinearGradient
+        colors={[
+          '#2c2c2c',
+          '#1a1a1a',
+          '#2c2c2c',
+        ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.backgroundGradient}
+      />
       
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingTop: 20 }}>
-        <View style={styles.container}>
+      {/* Zurück-Button */}
+      {onNavigate && (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => onNavigate('welcome')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backButtonText}>← Zurück</Text>
+        </TouchableOpacity>
+      )}
+      
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Logo - größer und mittig am oberen Rand */}
+        <View style={styles.logoContainer}>
+          <OptimizedImage 
+            source={require('./assets/images/Logo_white.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>Bottle Trade</Text>
+        </View>
+        
+        {/* Content Container */}
+        <View style={styles.contentContainer}>
           <Text style={styles.mainTitle}>Bottle-Trade leicht erklärt</Text>
-          <Text style={[styles.welcomeText, { color: '#FFFFFF' }]}>{welcomeText}</Text>
+          <Text style={styles.welcomeText}>{welcomeText}</Text>
           
           {sections.map((section) => (
             <View key={section.id} style={styles.accordionSection}>
               <TouchableOpacity 
                 style={styles.accordionHeader}
                 onPress={() => toggleSection(section.id)}
+                activeOpacity={0.8}
               >
                 <View style={styles.headerContent}>
                   <Text style={styles.headerTitle}>{section.title}</Text>
@@ -152,7 +148,14 @@ export default function InfoScreen({ onNavigate, onShowRegister, isLoggedIn }) {
                     <TouchableOpacity
                       style={styles.actionButton}
                       onPress={onShowRegister}
+                      activeOpacity={0.8}
                     >
+                      <LinearGradient
+                        colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.buttonGradient}
+                      />
                       <Text style={styles.actionButtonText}>Jetzt registrieren</Text>
                     </TouchableOpacity>
                   )}
@@ -160,200 +163,219 @@ export default function InfoScreen({ onNavigate, onShowRegister, isLoggedIn }) {
               )}
             </View>
           ))}
-         </View>
-       </ScrollView>
-       <Footer />
-       <BottomNavigation onNavigate={onNavigate || (() => {})} isLoggedIn={isLoggedIn || false} />
-     </View>
-   );
- }
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
-    position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  hamburgerContainer: {
-    flex: 0,
-    position: 'relative',
-    zIndex: 1000,
-    width: 40,
-    alignItems: 'center',
-  },
-  hamburgerButton: {
-    padding: 5,
-  },
-  hamburgerLine: {
-    width: 22,
-    height: 2.5,
-    backgroundColor: '#FFFFFF',
-    marginVertical: 3,
-    borderRadius: 1.5,
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerRight: {
-    flex: 0,
-    width: 80,
-    alignItems: 'center',
-  },
-  greeting: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
   container: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)', // Dunkelgrau mit Transparenz
-    padding: 20,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)', // Subtiler weißer Border
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-    marginBottom: 20,
+    flex: 1,
     width: '100%',
-    maxWidth: 350,
-    alignSelf: 'center',
-  },
-  mainTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 10,
-    fontStyle: 'italic',
-    fontWeight: 'bold',
-  },
-  welcomeTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 15,
-    marginTop: 20,
-  },
-  welcomeText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    lineHeight: 24,
-    textAlign: 'justify',
-    fontWeight: 'normal',
-    marginBottom: 20,
-    marginTop: 5,
-  },
-      accordionSection: {
-        marginBottom: 15,
-        backgroundColor: '#2c2c2c', // Gleiche Farbe wie Hinweiscontainer
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.3)',
-        overflow: 'hidden',
-      },
-      accordionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 15,
-        backgroundColor: 'transparent', // 100% transparent
-        borderWidth: 0, // Kein Rahmen
-        borderRadius: 12,
-      },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  arrowIcon: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-      accordionContent: {
-        padding: 15,
-        backgroundColor: 'transparent', // 100% transparent
-        borderWidth: 0, // Kein Rahmen beim Aufklappen
-      },
-      contentCard: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        marginBottom: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        padding: 12,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
-      },
-  contentIcon: {
-    fontSize: 20,
-    marginRight: 12,
-    marginTop: 2,
-  },
-  contentText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#FFFFFF',
-    lineHeight: 20,
-    fontWeight: 'bold',
-  },
-  contentTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  contentDescription: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    lineHeight: 20,
-    fontWeight: 'bold',
-  },
-  actionButton: {
-    backgroundColor: '#6B8E23',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#556B2F',
+    backgroundColor: '#2c2c2c',
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
     alignItems: 'center',
-    marginTop: 15,
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  backButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 70 : 50,
+    left: 20,
+    zIndex: 1000,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
   },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 40,
+  },
+  logoContainer: {
+    width: '100%',
+    paddingTop: Platform.OS === 'ios' ? 80 : 60,
+    paddingBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logo: {
+    width: 300,
+    height: 300,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 38.4,
+    fontWeight: '700',
+    marginTop: 20,
+    letterSpacing: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  contentContainer: {
+    width: '100%',
+    paddingHorizontal: 40,
+    paddingBottom: 20,
+  },
+  mainTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 15,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  welcomeText: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 24,
+    textAlign: 'justify',
+    marginBottom: 30,
+  },
+  accordionSection: {
+    marginBottom: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 18,
+    backgroundColor: 'transparent',
+  },
+  headerContent: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  arrowIcon: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  accordionContent: {
+    padding: 18,
+    paddingTop: 0,
+    backgroundColor: 'transparent',
+  },
+  contentCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  contentIcon: {
+    fontSize: 24,
+    marginRight: 12,
+    marginTop: 2,
+  },
+  contentTextContainer: {
+    flex: 1,
+  },
+  contentTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  contentDescription: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 20,
+  },
+  contentText: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 24,
+    marginBottom: 15,
+  },
+  actionButton: {
+    backgroundColor: 'rgba(76, 175, 80, 0.25)',
+    paddingVertical: 18,
+    paddingHorizontal: 30,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(76, 175, 80, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  buttonGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    zIndex: 1,
   },
 });

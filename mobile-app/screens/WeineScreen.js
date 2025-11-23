@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Platform, StatusBar } from 'react-native';
+import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
 
-export default function WeineScreen({ onNavigate, onLogout, isAdmin = false, unreadNotifications = 0, isLoggedIn = false }) {
+export default function WeineScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -58,34 +59,28 @@ export default function WeineScreen({ onNavigate, onLogout, isAdmin = false, unr
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
-      
       {/* StatusBar-Ersatz für iPhone */}
       <View style={{
         height: Platform.OS === 'ios' ? 60 : 0,
         backgroundColor: '#2c2c2c',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.2)'
+        width: '100%',
       }} />
-      
-      <DynamicHamburgerMenu 
+      <View style={styles.container}>
+        <DynamicHamburgerMenu 
         onNavigate={onNavigate || (() => {})} 
         isLoggedIn={true} 
         onLogout={onLogout || (() => {})} 
         isAdmin={isAdmin} 
-        unreadNotifications={unreadNotifications}
+        unreadCount={unreadCount}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
       />
-      
-      <View style={styles.contentContainer}>
-        <View style={styles.header}>
+        
+        <View style={styles.contentContainer}>
+        {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+        <View style={styles.logoHeaderContainer}>
+          {/* Hamburger-Menü links */}
           <View style={styles.hamburgerContainer}>
             <TouchableOpacity 
               style={styles.hamburgerButton}
@@ -96,10 +91,38 @@ export default function WeineScreen({ onNavigate, onLogout, isAdmin = false, unr
               <View style={styles.hamburgerLine} />
             </TouchableOpacity>
           </View>
-          <View style={styles.headerCenter}>
-            <Text style={styles.greeting}>🍷 Weine</Text>
+          
+          {/* Bottle (Logo) Trade in der Mitte */}
+          <View style={styles.logoHeaderCenter}>
+            <Text style={styles.logoHeaderText}>Bottle</Text>
+            <View style={styles.logoImageWrapper}>
+              <OptimizedImage
+                source={require('../assets/images/Logo_white.png')}
+                style={styles.logoHeaderImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.logoHeaderText}>Trade</Text>
           </View>
-          <View style={styles.headerRight} />
+          
+          {/* Profil-Icon rechts */}
+          <TouchableOpacity 
+            style={styles.profileIconContainer}
+            onPress={() => onNavigate('profil')}
+          >
+            <View style={styles.profileIconCircle}>
+              <Text style={styles.profileIconText}>P</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Header mit Überschrift */}
+        <View style={styles.header}>
+          <View style={styles.headerCenter}>
+            <View style={styles.greetingContainer}>
+              <Text style={styles.greeting}>Weine</Text>
+            </View>
+          </View>
         </View>
       </View>
       
@@ -140,12 +163,17 @@ export default function WeineScreen({ onNavigate, onLogout, isAdmin = false, unr
             </View>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+        </ScrollView>
 
-      <TouchableOpacity style={styles.addButton}>
-        <Text style={styles.addButtonText}>+ Wein hinzufügen</Text>
-      </TouchableOpacity>
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+        <TouchableOpacity style={styles.addButton}>
+          <Text style={styles.addButtonText}>+ Wein hinzufügen</Text>
+        </TouchableOpacity>
+      </View>
+      <BottomNavigation
+        onNavigate={onNavigate}
+        isLoggedIn={isLoggedIn}
+        unreadCount={unreadCount}
+      />
     </View>
   );
 }
@@ -153,26 +181,89 @@ export default function WeineScreen({ onNavigate, onLogout, isAdmin = false, unr
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   contentContainer: {
     flex: 1,
+    backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
+  },
+  logoHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
+    paddingBottom: 10,
+    borderBottomWidth: 0,
+  },
+  logoHeaderCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  logoHeaderText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 12,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileIconContainer: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingHorizontal: 25,
+    paddingTop: 25,
+    paddingBottom: 25,
+    backgroundColor: '#2c2c2c',
     position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    marginTop: 0,
+    minHeight: 70,
+    borderTopWidth: 0,
+    borderBottomWidth: 0,
   },
   hamburgerContainer: {
     flex: 0,
@@ -200,15 +291,35 @@ const styles = StyleSheet.create({
     width: 80,
     alignItems: 'center',
   },
+  greetingContainer: {
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    borderRadius: 15,
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 215, 0, 0.5)',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
   greeting: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize: 45,
+    fontWeight: '900',
+    color: '#FFD700',
     textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Snell Roundhand' : 'serif',
+    fontStyle: 'italic',
+    letterSpacing: 1.5,
+    textShadowColor: 'rgba(255, 215, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 10,
+    includeFontPadding: false,
   },
   content: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
   },
   scrollContent: {
     flexGrow: 1,
@@ -227,6 +338,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: 15,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF', // Weiße Border
     marginBottom: 15,
     elevation: 2,
   },

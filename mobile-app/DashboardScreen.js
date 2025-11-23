@@ -1,15 +1,55 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Platform, Image } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Platform, RefreshControl } from 'react-native';
 import { ImageBackground } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Footer from './Footer';
+import OptimizedImage from './components/OptimizedImage';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
-import NotificationBadge from './components/NotificationBadge';
 import BottomNavigation from './components/BottomNavigation';
+import { getCurrentUser } from './services/testAuth';
+import { getAvailableWinesCount, getUserWineCounts, getOnlineUsersCount, getCompletedTradesCount, getMyCompletedTradesCount } from './services/database-web';
 
-export default function DashboardScreen({ onNavigate, onLogout, userName = "Gast", isAdmin = false, unreadNotifications = 0, isLoggedIn = false }) {
-  console.log('📊 DashboardScreen: unreadNotifications =', unreadNotifications);
+export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false }) {
+  // Log nur bei Änderung, nicht bei jedem Render
+  const prevUnreadRef = React.useRef(unreadCount);
+  React.useEffect(() => {
+    if (prevUnreadRef.current !== unreadCount) {
+      console.log('📊 DashboardScreen: unreadCount =', unreadCount);
+      prevUnreadRef.current = unreadCount;
+    }
+  }, [unreadCount]);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({ availableWines: 0, myWines: 0, myWinesPublished: 0, onlineUsers: 0, tradesCompleted: 0, myTradesCompleted: 0, btp: 0 });
+
+  const load = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const me = getCurrentUser();
+      const myId = me?.uid;
+      const [availableWines, userCounts, onlineUsers, tradesCompleted, myTradesCompleted] = await Promise.all([
+        getAvailableWinesCount(),
+        myId ? getUserWineCounts(myId) : Promise.resolve({ total: 0, published: 0 }),
+        getOnlineUsersCount(),
+        getCompletedTradesCount(),
+        myId ? getMyCompletedTradesCount(myId) : Promise.resolve(0)
+      ]);
+      setStats({
+        availableWines,
+        myWines: userCounts.total,
+        myWinesPublished: userCounts.published,
+        onlineUsers,
+        tradesCompleted,
+        myTradesCompleted,
+        btp: me?.btp ?? 0,
+      });
+    } catch (e) {
+      console.error('❌ Dashboard load error:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <View style={styles.container}>
@@ -17,13 +57,7 @@ export default function DashboardScreen({ onNavigate, onLogout, userName = "Gast
       <View style={{
         height: Platform.OS === 'ios' ? 60 : 0,
         backgroundColor: '#2c2c2c',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.2)'
+        width: '100%',
       }} />
       <View style={styles.container}>
         <DynamicHamburgerMenu 
@@ -31,99 +65,153 @@ export default function DashboardScreen({ onNavigate, onLogout, userName = "Gast
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={isAdmin} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
         />
         
         <View style={styles.contentContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.hamburgerContainer}>
-              <TouchableOpacity 
-                style={styles.hamburgerButton}
-                onPress={() => setIsMenuVisible(!isMenuVisible)}
+          {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+          <View style={styles.logoHeaderContainer}>
+            {/* Hamburger-Menü links */}
+            <View style={styles.headerLeft}>
+              <View style={styles.hamburgerContainer}>
+                <TouchableOpacity 
+                  style={styles.hamburgerButton}
+                  onPress={() => setIsMenuVisible(!isMenuVisible)}
+                >
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={styles.wishlistButton}
+                onPress={() => onNavigate('wunschliste')}
               >
-                <View style={styles.hamburgerLine} />
-                <View style={styles.hamburgerLine} />
-                <View style={styles.hamburgerLine} />
+                <Text style={styles.wishlistHeart}>♡</Text>
               </TouchableOpacity>
             </View>
+            
+            {/* Bottle (Logo) Trade in der Mitte */}
+            <View style={styles.logoHeaderCenter}>
+              <Text style={styles.logoHeaderText}>Bottle</Text>
+              <View style={styles.logoImageWrapper}>
+                <OptimizedImage
+                  source={require('./assets/images/Logo_white.png')}
+                  style={styles.logoHeaderImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.logoHeaderText}>Trade</Text>
+            </View>
+            
+            {/* Profil-Icon rechts */}
+            <View style={styles.profileSection}>
+              <TouchableOpacity 
+                style={styles.profileIconContainer}
+                onPress={() => onNavigate('profil')}
+              >
+                <View style={styles.profileIconCircle}>
+                  <Text style={styles.profileIconText}>P</Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.profileBtpBadge}>
+                <Text style={styles.profileBtpText}>{`${stats.btp ?? 0} BTP`}</Text>
+              </View>
+            </View>
+          </View>
+          
+          {/* Header mit Überschrift */}
+          <View style={styles.header}>
             <View style={styles.headerCenter}>
               <Text style={styles.greeting}>Dashboard</Text>
             </View>
-            <View style={styles.headerRight}>
-              <TouchableOpacity 
-                style={styles.notificationButton}
-                onPress={() => onNavigate('notifications')}
-              >
-                <Text style={styles.notificationIcon}>🔔</Text>
-                <NotificationBadge 
-                  count={unreadNotifications}
-                  onPress={() => onNavigate('notifications')}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* User Info Section */}
-          <View style={styles.userInfoContainer}>
-            <Text style={styles.loginText}>Du bist eingeloggt als: {userName}</Text>
           </View>
 
           {/* Dashboard Content */}
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            <View style={styles.dashboardContainer}>
-
-              {/* Dashboard Kacheln - Neues Layout */}
-              <View style={styles.tilesGrid}>
-                {/* Zeile 1 - Weinbörse (volle Breite) */}
-                <TouchableOpacity style={styles.tileFullWidth} onPress={() => onNavigate('weinboerse')}>
-                  <Text style={styles.tileIcon}>🌐</Text>
-                  <Text style={styles.tileTitle}>Weinbörse</Text>
-                </TouchableOpacity>
-
-                {/* Zeile 2 - Mein Weinregal | Weinregal befüllen */}
-                <View style={styles.tilesRow}>
-                  <TouchableOpacity style={styles.tile} onPress={() => onNavigate('mein-weinregal')}>
-                    <Text style={styles.tileIcon}>🍷</Text>
-                    <Text style={styles.tileTitle}>Mein Weinregal</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.tile} onPress={() => onNavigate('weinregal')}>
-                    <Text style={styles.tileIcon}>📝</Text>
-                    <Text style={styles.tileTitle}>Weinregal befüllen</Text>
-                  </TouchableOpacity>
+          <ScrollView style={styles.dashboardContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}>
+            <View style={styles.grid}>
+              {/* Meine Weine */}
+              <LinearGradient
+                colors={['#f1e9dd', '#e6dccf']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.card}
+              >
+                <View style={[styles.cardHeader, styles.cardHeaderWine]}>
+                  <Text style={styles.cardHeaderTitle}>Meine Weine</Text>
                 </View>
-
-                {/* Zeile 3 - Shop | BTP */}
-                <View style={styles.tilesRow}>
-                  <TouchableOpacity style={styles.tile} onPress={() => onNavigate('shop')}>
-                    <Text style={styles.tileIcon}>🛒</Text>
-                    <Text style={styles.tileTitle}>Shop</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.tile} onPress={() => onNavigate('btp')}>
-                    <Text style={styles.tileIcon}>💎</Text>
-                    <Text style={styles.tileTitle}>BTP</Text>
-                  </TouchableOpacity>
+                <View style={styles.cardBody}>
+                  <View style={styles.cardSplit}>
+                    <View style={styles.cardSplitItem}>
+                      <Text style={styles.cardLabel}>im Weinregal</Text>
+                      <Text style={styles.cardValueSmall}>{stats.myWines}</Text>
+                    </View>
+                    <View style={styles.cardSplitItem}>
+                      <Text style={styles.cardLabel}>in der Weinbörse</Text>
+                      <Text style={styles.cardValueSmall}>{stats.myWinesPublished}</Text>
+                    </View>
+                  </View>
                 </View>
-
-                {/* Zeile 4 - Community (volle Breite) */}
-                <TouchableOpacity style={styles.tileFullWidth} onPress={() => onNavigate('community')}>
-                  <Text style={styles.tileIcon}>👥</Text>
-                  <Text style={styles.tileTitle}>Community</Text>
-                </TouchableOpacity>
-              </View>
+              </LinearGradient>
+              {/* Verfügbare Weine */}
+              <LinearGradient
+                colors={['#f1e9dd', '#e6dccf']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.card}
+              >
+                <View style={[styles.cardHeader, styles.cardHeaderMarket]}>
+                  <Text style={styles.cardHeaderTitle}>Verfügbare Weine in der Weinbörse</Text>
+                </View>
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardValue}>{stats.availableWines}</Text>
+                </View>
+              </LinearGradient>
+              {/* Tausche */}
+              <LinearGradient
+                colors={['#f1e9dd', '#e6dccf']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.card}
+              >
+                <View style={[styles.cardHeader, styles.cardHeaderTrades]}>
+                  <Text style={styles.cardHeaderTitle}>Tausche</Text>
+                </View>
+                <View style={styles.cardBody}>
+                  <View style={styles.cardSplit}>
+                    <View style={styles.cardSplitItem}>
+                      <Text style={styles.cardLabel}>Alle</Text>
+                      <Text style={styles.cardValueSmall}>{stats.tradesCompleted}</Text>
+                    </View>
+                    <View style={styles.cardSplitItem}>
+                      <Text style={styles.cardLabel}>Meine</Text>
+                      <Text style={styles.cardValueSmall}>{stats.myTradesCompleted}</Text>
+                    </View>
+                  </View>
+                </View>
+              </LinearGradient>
             </View>
           </ScrollView>
         </View>
-        <Footer />
+        {/* Footer entfällt hier zugunsten der BottomNavigation */}
       </View>
       
+      {/* Hinweis zu User Online */}
+      <View style={styles.onlineUsersBanner}>
+        <Text style={styles.onlineUsersText}>
+          {`${stats.onlineUsers} User online`}
+        </Text>
+      </View>
+
       {/* Fixed Bottom Navigation */}
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+      <BottomNavigation
+        onNavigate={onNavigate}
+        isLoggedIn={isLoggedIn}
+        unreadCount={unreadCount}
+      />
 
       {/* Hamburger Menu Modal entfernt - wird durch DynamicHamburgerMenu ersetzt */}
       {false && (
@@ -216,27 +304,115 @@ export default function DashboardScreen({ onNavigate, onLogout, userName = "Gast
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   contentContainer: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
+  },
+  logoHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
+    paddingBottom: 10,
+  },
+  logoHeaderCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  logoHeaderText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 12,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileSection: {
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileIconContainer: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  profileIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 25,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  profileBtpBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#DAA520',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  profileBtpText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2c2c2c',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  headerLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#2c2c2c',
     position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
+    marginTop: 0,
+    minHeight: 60,
+    borderTopWidth: 0,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   hamburgerContainer: {
     flex: 0,
@@ -244,6 +420,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     width: 40,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
     padding: 5,
@@ -254,6 +431,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
+  },
+  wishlistButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wishlistHeart: {
+    fontSize: 24,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   headerCenter: {
     flex: 1,
@@ -273,21 +461,125 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   greeting: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize: 30,
+    fontWeight: '600',
+    color: '#DAA520', // Warmes Gold
     textAlign: 'center',
+    letterSpacing: 0.5,
+    // Eleganter Gradient-Effekt durch Text-Shadow
+    textShadowColor: 'rgba(218, 165, 32, 0.6)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+    includeFontPadding: false,
   },
   userName: {
     fontSize: 20,
-    color: '#FFFFFF',
+    color: '#2c2c2c', // Dunkler Text auf hellem Header
     fontWeight: 'bold',
   },
   content: {
     flex: 1,
   },
   dashboardContainer: {
-    padding: 20,
+    flex: 1,
+    padding: 16,
+  },
+  grid: { flexDirection: 'column', gap: 14 },
+  card: {
+    width: '100%',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.45)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    overflow: 'hidden',
+    shadowColor: 'rgba(0, 0, 0, 0.2)',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  cardHeader: {
+    width: '100%',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  cardHeaderTitle: {
+    color: '#1a1a1a',
+    fontSize: 18,
+    fontWeight: '700',
+    opacity: 0.9,
+    textAlign: 'center',
+    letterSpacing: 0.6,
+  },
+  cardHeaderWine: {
+    backgroundColor: 'rgba(244, 236, 226, 0.75)',
+  },
+  cardHeaderMarket: {
+    backgroundColor: 'rgba(226, 239, 249, 0.75)',
+  },
+  cardHeaderTrades: {
+    backgroundColor: 'rgba(231, 243, 233, 0.75)',
+  },
+  cardBody: {
+    width: '100%',
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  cardValue: {
+    color: '#000000',
+    fontSize: 32,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.8,
+  },
+  cardSplit: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 12,
+    gap: 18,
+  },
+  cardSplitItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardLabel: {
+    color: 'rgba(0, 0, 0, 0.6)',
+    fontSize: 13,
+    marginBottom: 4,
+    textAlign: 'center',
+    letterSpacing: 0.4,
+  },
+  cardValueSmall: {
+    color: '#000000',
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.6,
+  },
+  onlineUsersBanner: {
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    backgroundColor: '#2c2c2c',
+    marginBottom: 80,
+  },
+  onlineUsersText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   dashboardTitle: {
     fontSize: 28,
@@ -423,7 +715,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 30,
     paddingBottom: 20,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   menuTitle: {
@@ -441,7 +733,7 @@ const styles = StyleSheet.create({
   },
   menuItem: {
     paddingVertical: 12,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   menuItemText: {
@@ -457,19 +749,5 @@ const styles = StyleSheet.create({
   logoutText: {
     color: '#4B0000',
     fontWeight: 'bold',
-  },
-  // User Info Styles
-  userInfoContainer: {
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    marginTop: 0,
-    marginHorizontal: 0,
-    marginBottom: 15,
-    padding: 12,
-    alignItems: 'center',
-  },
-  loginText: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    textAlign: 'center',
   },
 });

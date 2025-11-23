@@ -13,7 +13,7 @@ import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
 
-export default function SurveyAnswerScreen({ onNavigate, onLogout, survey, onAnswerSurvey, isLoggedIn = false }) {
+export default function SurveyAnswerScreen({ onNavigate, onLogout, survey, onAnswerSurvey, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedOption, setSelectedOption] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,7 +83,7 @@ export default function SurveyAnswerScreen({ onNavigate, onLogout, survey, onAns
         left: 0,
         right: 0,
         zIndex: 1000,
-        borderBottomWidth: 1,
+        borderBottomWidth: 0.5,
         borderBottomColor: 'rgba(255, 255, 255, 0.2)'
       }} />
       
@@ -196,7 +196,12 @@ export default function SurveyAnswerScreen({ onNavigate, onLogout, survey, onAns
         </View>
         <Footer />
       </View>
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+      <BottomNavigation
+        onNavigate={onNavigate}
+        isLoggedIn={isLoggedIn}
+        unreadNotifications={unreadNotifications}
+        unreadHints={unreadHints}
+      />
     </View>
   );
 }
@@ -204,7 +209,7 @@ export default function SurveyAnswerScreen({ onNavigate, onLogout, survey, onAns
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Gleiche Farbe wie StatusBar-Ersatz-View, verhindert weißen Strich
   },
   contentContainer: {
     flex: 1,
@@ -214,16 +219,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
     position: 'relative',
     marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    minHeight: 90,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
+    // Glassmorphism Effekt
+    shadowColor: '#DAA520',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   hamburgerContainer: {
     flex: 0,
@@ -238,7 +249,7 @@ const styles = StyleSheet.create({
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -252,9 +263,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2c2c2c', // Dunkler Text auf hellem Header
     textAlign: 'center',
   },
   backButton: {
@@ -407,7 +418,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     marginBottom: 20,
   },
 });

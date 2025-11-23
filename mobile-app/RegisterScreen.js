@@ -1,15 +1,12 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, ScrollView, Platform } from 'react-native';
-import OptimizedImage from './components/OptimizedImage';
+import React, { useState, useRef } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import Footer from './Footer';
 import { registerUser } from './services/testAuth';
-import DynamicHamburgerMenu from './DynamicHamburgerMenu';
-import BottomNavigation from './components/BottomNavigation';
+import OptimizedImage from './components/OptimizedImage';
 
-export default function RegisterScreen({ onRegister, onShowLogin, onNavigate, isLoggedIn }) {
-  const [isMenuVisible, setIsMenuVisible] = useState(false);
+export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) {
+  const [currentStep, setCurrentStep] = useState(1); // 1-5
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -25,6 +22,78 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate, is
     newsletter: false
   });
   const [profileImage, setProfileImage] = useState(null);
+  
+  // Refs für TextInput-Felder
+  const usernameRef = useRef(null);
+  const firstNameRef = useRef(null);
+  const lastNameRef = useRef(null);
+  const emailRef = useRef(null);
+  const streetRef = useRef(null);
+  const houseNumberRef = useRef(null);
+  const zipCodeRef = useRef(null);
+  const cityRef = useRef(null);
+  const passwordRef = useRef(null);
+  const confirmPasswordRef = useRef(null);
+
+  const updateFormData = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert('Berechtigung erforderlich', 'Wir benötigen Zugriff auf deine Galerie, um ein Profilbild auszuwählen.');
+      return;
+    }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setProfileImage(result.assets[0].uri);
+    }
+  };
+
+  const handleNext = () => {
+    // Validierung je nach Schritt
+    if (currentStep === 1) {
+      if (!formData.username) {
+        Alert.alert('Fehler', 'Bitte geben Sie einen Benutzernamen ein');
+        return;
+      }
+    } else if (currentStep === 2) {
+      if (!formData.firstName || !formData.lastName || !formData.email || !formData.street || !formData.houseNumber || !formData.zipCode || !formData.city) {
+        Alert.alert('Fehler', 'Bitte füllen Sie alle Felder aus');
+        return;
+      }
+    } else if (currentStep === 3) {
+      if (!formData.password || !formData.confirmPassword) {
+        Alert.alert('Fehler', 'Bitte geben Sie ein Passwort ein');
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        Alert.alert('Fehler', 'Die Passwörter stimmen nicht überein');
+        return;
+      }
+    }
+    
+    if (currentStep < 5) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    } else if (onNavigate) {
+      onNavigate('welcome');
+    }
+  };
 
   const handleRegister = async () => {
     const { username, email, password, confirmPassword, firstName, lastName, street, houseNumber, zipCode, city, publishProfile, newsletter } = formData;
@@ -39,41 +108,16 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate, is
       return;
     }
     
-    // Passwort-Validierung
-    if (password.length < 8) {
-      Alert.alert('Fehler', 'Das Passwort muss mindestens 8 Zeichen lang sein');
-      return;
-    }
-
-    // Prüfe auf Groß- und Kleinschreibung
-    if (!/[a-z]/.test(password)) {
-      Alert.alert('Fehler', 'Das Passwort muss mindestens einen Kleinbuchstaben enthalten');
-      return;
-    }
-
-    if (!/[A-Z]/.test(password)) {
-      Alert.alert('Fehler', 'Das Passwort muss mindestens einen Großbuchstaben enthalten');
-      return;
-    }
-
-    // Prüfe auf Zahlen
-    if (!/\d/.test(password)) {
-      Alert.alert('Fehler', 'Das Passwort muss mindestens eine Zahl enthalten');
-      return;
-    }
-
-    // Prüfe auf Sonderzeichen
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-      Alert.alert('Fehler', 'Das Passwort muss mindestens ein Sonderzeichen enthalten');
+    if (!password || password.trim().length === 0) {
+      Alert.alert('Fehler', 'Bitte geben Sie ein Passwort ein');
       return;
     }
     
     // BTP-Berechnung
     let btpEarned = 0;
-    if (formData.publishProfile) btpEarned += 10;
-    if (formData.newsletter) btpEarned += 10;
+    if (publishProfile) btpEarned += 10;
+    if (newsletter) btpEarned += 10;
 
-    // Erweiterte Registrierungsdaten für Admin
     const registrationData = {
       ...formData,
       btpEarned,
@@ -113,574 +157,646 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate, is
     }
   };
 
-  const updateFormData = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const pickImage = async () => {
-    // Berechtigung anfragen
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (status !== 'granted') {
-      Alert.alert('Berechtigung erforderlich', 'Wir benötigen Zugriff auf deine Galerie, um ein Profilbild auszuwählen.');
-      return;
-    }
-
-    // Bild auswählen
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setProfileImage(result.assets[0].uri);
-    }
-  };
-
-         return (
-           <View style={{
-             flex: 1,
-             backgroundColor: '#d5dfe0', // Neue Primärfarbe
-           }}>
-             {/* StatusBar-Ersatz für iPhone */}
-             <View style={{
-               height: Platform.OS === 'ios' ? 60 : 0,
-               backgroundColor: '#2c2c2c',
-               position: 'absolute',
-               top: 0,
-               left: 0,
-               right: 0,
-               zIndex: 1000,
-               borderBottomWidth: 1,
-               borderBottomColor: 'rgba(255, 255, 255, 0.2)'
-             }} />
-             <DynamicHamburgerMenu 
-               onNavigate={onNavigate || (() => {})} 
-               isLoggedIn={isLoggedIn || false} 
-               onLogout={() => {}} 
-               isAdmin={false} 
-               unreadNotifications={0}
-               renderButton={false}
-               externalMenuVisible={isMenuVisible}
-               onMenuToggle={setIsMenuVisible}
-             />
-             
-             {/* Header */}
-             <View style={styles.header}>
-               <View style={styles.hamburgerContainer}>
-                 <TouchableOpacity 
-                   style={styles.hamburgerButton}
-                   onPress={() => setIsMenuVisible(!isMenuVisible)}
-                 >
-                   <View style={styles.hamburgerLine} />
-                   <View style={styles.hamburgerLine} />
-                   <View style={styles.hamburgerLine} />
-                 </TouchableOpacity>
-               </View>
-               <View style={styles.headerCenter}>
-                 <Text style={styles.greeting}>Registrierung</Text>
-               </View>
-               <View style={styles.headerRight} />
-             </View>
+  const renderStep1 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Maske 1/4</Text>
+      <Text style={styles.stepSubtitle}>Benutzername und Foto</Text>
       
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 20, paddingTop: 20 }}>
-        <View style={styles.glassContainer}>
-        <Text style={styles.title}>Registrierung</Text>
+      <TextInput
+        ref={usernameRef}
+        style={styles.input}
+        placeholder="Benutzername"
+        placeholderTextColor="rgba(255, 255, 255, 0.6)"
+        value={formData.username}
+        onChangeText={(value) => updateFormData('username', value)}
+        autoCapitalize="none"
+        returnKeyType="next"
+        onSubmitEditing={() => handleNext()}
+      />
       
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Benutzername"
-            placeholderTextColor="rgba(0, 0, 0, 0.6)"
-            value={formData.username}
-            onChangeText={(value) => updateFormData('username', value)}
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="E-Mail"
-            placeholderTextColor="rgba(0, 0, 0, 0.6)"
-            value={formData.email}
-            onChangeText={(value) => updateFormData('email', value)}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-
-          <View style={styles.rowContainer}>
-            <TextInput
-              style={[styles.input, styles.halfInput]}
-              placeholder="Vorname"
-              placeholderTextColor="rgba(0, 0, 0, 0.6)"
-              value={formData.firstName}
-              onChangeText={(value) => updateFormData('firstName', value)}
-            />
-            <TextInput
-              style={[styles.input, styles.halfInput]}
-              placeholder="Nachname"
-              placeholderTextColor="rgba(0, 0, 0, 0.6)"
-              value={formData.lastName}
-              onChangeText={(value) => updateFormData('lastName', value)}
-            />
+      <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
+        {profileImage ? (
+          <Image source={{ uri: profileImage }} style={styles.profileImage} />
+        ) : (
+          <View style={styles.imagePlaceholder}>
+            <Text style={styles.imagePlaceholderText}>📷 Foto auswählen</Text>
           </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
 
-          <View style={styles.rowContainer}>
-            <TextInput
-              style={[styles.input, styles.streetInput]}
-              placeholder="Straße"
-              placeholderTextColor="rgba(0, 0, 0, 0.6)"
-              value={formData.street}
-              onChangeText={(value) => updateFormData('street', value)}
-            />
-            <TextInput
-              style={[styles.input, styles.houseNumberInput]}
-              placeholder="Hausnr."
-              placeholderTextColor="rgba(0, 0, 0, 0.6)"
-              value={formData.houseNumber}
-              onChangeText={(value) => updateFormData('houseNumber', value)}
-            />
-          </View>
+  const renderStep2 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Maske 2/4</Text>
+      <Text style={styles.stepSubtitle}>Persönliche Daten</Text>
+      
+      <View style={styles.row}>
+        <TextInput
+          ref={firstNameRef}
+          style={[styles.input, styles.halfInput]}
+          placeholder="Vorname"
+          placeholderTextColor="rgba(255, 255, 255, 0.6)"
+          value={formData.firstName}
+          onChangeText={(value) => updateFormData('firstName', value)}
+          returnKeyType="next"
+          onSubmitEditing={() => lastNameRef.current?.focus()}
+        />
+        <TextInput
+          ref={lastNameRef}
+          style={[styles.input, styles.halfInput]}
+          placeholder="Nachname"
+          placeholderTextColor="rgba(255, 255, 255, 0.6)"
+          value={formData.lastName}
+          onChangeText={(value) => updateFormData('lastName', value)}
+          returnKeyType="next"
+          onSubmitEditing={() => emailRef.current?.focus()}
+        />
+      </View>
+      
+      <TextInput
+        ref={emailRef}
+        style={styles.input}
+        placeholder="E-Mail"
+        placeholderTextColor="rgba(255, 255, 255, 0.6)"
+        value={formData.email}
+        onChangeText={(value) => updateFormData('email', value)}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        returnKeyType="next"
+        onSubmitEditing={() => streetRef.current?.focus()}
+      />
+      
+      <View style={styles.row}>
+        <TextInput
+          ref={streetRef}
+          style={[styles.input, styles.twoThirdsInput]}
+          placeholder="Straße"
+          placeholderTextColor="rgba(255, 255, 255, 0.6)"
+          value={formData.street}
+          onChangeText={(value) => updateFormData('street', value)}
+          returnKeyType="next"
+          onSubmitEditing={() => houseNumberRef.current?.focus()}
+        />
+        <TextInput
+          ref={houseNumberRef}
+          style={[styles.input, styles.oneThirdInput]}
+          placeholder="Nr"
+          placeholderTextColor="rgba(255, 255, 255, 0.6)"
+          value={formData.houseNumber}
+          onChangeText={(value) => updateFormData('houseNumber', value)}
+          returnKeyType="next"
+          onSubmitEditing={() => zipCodeRef.current?.focus()}
+        />
+      </View>
+      
+      <View style={styles.row}>
+        <TextInput
+          ref={zipCodeRef}
+          style={[styles.input, styles.oneThirdInput]}
+          placeholder="PLZ"
+          placeholderTextColor="rgba(255, 255, 255, 0.6)"
+          value={formData.zipCode}
+          onChangeText={(value) => updateFormData('zipCode', value)}
+          keyboardType="numeric"
+          returnKeyType="next"
+          onSubmitEditing={() => cityRef.current?.focus()}
+        />
+        <TextInput
+          ref={cityRef}
+          style={[styles.input, styles.twoThirdsInput]}
+          placeholder="Ort"
+          placeholderTextColor="rgba(255, 255, 255, 0.6)"
+          value={formData.city}
+          onChangeText={(value) => updateFormData('city', value)}
+          returnKeyType="next"
+          onSubmitEditing={() => handleNext()}
+        />
+      </View>
+    </View>
+  );
 
-          <View style={styles.rowContainer}>
-            <TextInput
-              style={[styles.input, styles.zipInput]}
-              placeholder="PLZ"
-              placeholderTextColor="rgba(0, 0, 0, 0.6)"
-              value={formData.zipCode}
-              onChangeText={(value) => updateFormData('zipCode', value)}
-              keyboardType="numeric"
-            />
-            <TextInput
-              style={[styles.input, styles.cityInput]}
-              placeholder="Wohnort"
-              placeholderTextColor="rgba(0, 0, 0, 0.6)"
-              value={formData.city}
-              onChangeText={(value) => updateFormData('city', value)}
-            />
-          </View>
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Passwort"
-            placeholderTextColor="rgba(0, 0, 0, 0.6)"
-            value={formData.password}
-            onChangeText={(value) => updateFormData('password', value)}
-            secureTextEntry
-          />
-          
-          {/* Passwort-Anforderungen */}
-          <View style={styles.passwordRequirements}>
-            <Text style={styles.requirementsTitle}>Passwort-Anforderungen:</Text>
-            <Text style={[styles.requirement, formData.password.length >= 8 && styles.requirementMet]}>
-              ✓ Mindestens 8 Zeichen
-            </Text>
-            <Text style={[styles.requirement, /[a-z]/.test(formData.password) && styles.requirementMet]}>
-              ✓ Mindestens ein Kleinbuchstabe
-            </Text>
-            <Text style={[styles.requirement, /[A-Z]/.test(formData.password) && styles.requirementMet]}>
-              ✓ Mindestens ein Großbuchstabe
-            </Text>
-            <Text style={[styles.requirement, /\d/.test(formData.password) && styles.requirementMet]}>
-              ✓ Mindestens eine Zahl
-            </Text>
-            <Text style={[styles.requirement, /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(formData.password) && styles.requirementMet]}>
-              ✓ Mindestens ein Sonderzeichen
-            </Text>
-          </View>
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Passwort bestätigen"
-            placeholderTextColor="rgba(0, 0, 0, 0.6)"
-            value={formData.confirmPassword}
-            onChangeText={(value) => updateFormData('confirmPassword', value)}
-            secureTextEntry
-          />
+  const renderStep3 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Maske 3/4</Text>
+      <Text style={styles.stepSubtitle}>Passwort</Text>
+      
+      <TextInput
+        ref={passwordRef}
+        style={styles.input}
+        placeholder="Passwort"
+        placeholderTextColor="rgba(255, 255, 255, 0.6)"
+        value={formData.password}
+        onChangeText={(value) => updateFormData('password', value)}
+        secureTextEntry
+        returnKeyType="next"
+        onSubmitEditing={() => confirmPasswordRef.current?.focus()}
+      />
+      
+      <TextInput
+        ref={confirmPasswordRef}
+        style={styles.input}
+        placeholder="Passwort bestätigen"
+        placeholderTextColor="rgba(255, 255, 255, 0.6)"
+        value={formData.confirmPassword}
+        onChangeText={(value) => updateFormData('confirmPassword', value)}
+        secureTextEntry
+        returnKeyType="done"
+        onSubmitEditing={() => handleNext()}
+      />
+    </View>
+  );
 
-          {/* BTP & Einstellungen Container */}
-          <View style={styles.btpSettingsContainer}>
-            {/* BTP Information */}
-            <View style={styles.btpInfo}>
-              <Text style={styles.btpTitle}>🎁 Willkommens-BTP</Text>
-              <Text style={styles.btpText}>Du erhältst 10 BTP für das erstmalige Veröffentlichen deines Profils</Text>
-              <Text style={styles.btpText}>Du erhältst 10 BTP für die erstmalige Anmeldung zum Newsletter</Text>
-            </View>
+  const renderStep4 = () => {
+    let btpEarned = 0;
+    if (formData.publishProfile) btpEarned += 10;
+    if (formData.newsletter) btpEarned += 10;
 
-            {/* Checkboxen */}
-            <View style={styles.checkboxContainer}>
-              <TouchableOpacity 
-                style={styles.checkboxItem}
-                onPress={() => updateFormData('publishProfile', !formData.publishProfile)}
-              >
-                <View style={[styles.checkbox, formData.publishProfile && styles.checkboxChecked]}>
-                  {formData.publishProfile && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.checkboxText}>Profil veröffentlichen (+10 BTP)</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.checkboxItem}
-                onPress={() => updateFormData('newsletter', !formData.newsletter)}
-              >
-                <View style={[styles.checkbox, formData.newsletter && styles.checkboxChecked]}>
-                  {formData.newsletter && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.checkboxText}>Newsletter abonnieren (+10 BTP)</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Profilbild Upload */}
-          <View style={styles.profileImageContainer}>
-            <Text style={styles.profileImageLabel}>Profilbild (optional)</Text>
-            {profileImage ? (
-              <View style={styles.imagePreviewContainer}>
-                <OptimizedImage source={{ uri: profileImage }} style={styles.imagePreview} />
-                <TouchableOpacity style={styles.changeImageButton} onPress={pickImage}>
-                  <Text style={styles.changeImageText}>Bild ändern</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.profileImageButton} onPress={pickImage}>
-                <Text style={styles.profileImageText}>📷 Profilbild hochladen</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          <LinearGradient
-            colors={['#6B8E23', '#556B2F']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.gradientBorder}
-          >
-            <TouchableOpacity style={styles.glassButton} onPress={handleRegister}>
-              <Text style={styles.glassButtonText}>Registrieren</Text>
-            </TouchableOpacity>
-          </LinearGradient>
-
-          <Text style={styles.adminNote}>
-            Nach der Registrierung muss Ihr Konto vom Administrator freigeschaltet werden.
+    return (
+      <View style={styles.stepContainer}>
+        <Text style={styles.stepTitle}>Maske 4/4</Text>
+        <Text style={styles.stepSubtitle}>Willkommens-BTP</Text>
+        
+        <View style={styles.btpContainer}>
+          <Text style={styles.btpTitle}>🎁 Willkommens-BTP</Text>
+          <Text style={styles.btpDescription}>
+            Aktiviere die Optionen unten und erhalte zusätzliche BTP bei der Registrierung!
           </Text>
           
-          <TouchableOpacity 
-            style={styles.linkButton} 
-            onPress={onShowLogin}
+          <TouchableOpacity
+            style={[styles.checkboxButton, formData.publishProfile && styles.checkboxButtonActive]}
+            onPress={() => updateFormData('publishProfile', !formData.publishProfile)}
           >
-            <Text style={styles.linkText}>Bereits ein Konto? Jetzt anmelden</Text>
+            <Text style={styles.checkboxText}>
+              {formData.publishProfile ? '✓' : '○'} Profil veröffentlichen (+10 BTP)
+            </Text>
           </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.checkboxButton, formData.newsletter && styles.checkboxButtonActive]}
+            onPress={() => updateFormData('newsletter', !formData.newsletter)}
+          >
+            <Text style={styles.checkboxText}>
+              {formData.newsletter ? '✓' : '○'} Newsletter abonnieren (+10 BTP)
+            </Text>
+          </TouchableOpacity>
+          
+          <View style={styles.btpTotal}>
+            <Text style={styles.btpTotalText}>Gesamt: {btpEarned} BTP</Text>
+          </View>
         </View>
-               </View>
-             </ScrollView>
-             <Footer />
-             <BottomNavigation onNavigate={onNavigate || (() => {})} isLoggedIn={isLoggedIn || false} />
-           </View>
-         );
-       }
+      </View>
+    );
+  };
+
+  const renderStep5 = () => {
+    let btpEarned = 0;
+    if (formData.publishProfile) btpEarned += 10;
+    if (formData.newsletter) btpEarned += 10;
+
+    return (
+      <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
+        <Text style={styles.stepTitle}>Übersicht</Text>
+        <Text style={styles.stepSubtitle}>Bitte überprüfen Sie Ihre Daten</Text>
+        
+        <View style={styles.summaryContainer}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Benutzername:</Text>
+            <Text style={styles.summaryValue}>{formData.username || '-'}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Vorname:</Text>
+            <Text style={styles.summaryValue}>{formData.firstName || '-'}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Nachname:</Text>
+            <Text style={styles.summaryValue}>{formData.lastName || '-'}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>E-Mail:</Text>
+            <Text style={styles.summaryValue}>{formData.email || '-'}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Adresse:</Text>
+            <Text style={styles.summaryValue}>
+              {formData.street && formData.houseNumber ? `${formData.street} ${formData.houseNumber}` : '-'}
+            </Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>PLZ / Ort:</Text>
+            <Text style={styles.summaryValue}>
+              {formData.zipCode && formData.city ? `${formData.zipCode} ${formData.city}` : '-'}
+            </Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Profil veröffentlichen:</Text>
+            <Text style={styles.summaryValue}>{formData.publishProfile ? 'Ja' : 'Nein'}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Newsletter:</Text>
+            <Text style={styles.summaryValue}>{formData.newsletter ? 'Ja' : 'Nein'}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Willkommens-BTP:</Text>
+            <Text style={styles.summaryValue}>{btpEarned} BTP</Text>
+          </View>
+        </View>
+      </ScrollView>
+    );
+  };
+
+  return (
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      {/* Subtiler Hintergrund-Gradient für Glassmorphismus-Effekt */}
+      <LinearGradient
+        colors={[
+          '#2c2c2c',
+          '#1a1a1a',
+          '#2c2c2c',
+        ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.backgroundGradient}
+      />
+      
+      {/* Zurück-Button */}
+      {onNavigate && (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleBack}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backButtonText}>← Zurück</Text>
+        </TouchableOpacity>
+      )}
+      
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Logo - größer und mittig am oberen Rand */}
+        <View style={styles.logoContainer}>
+          <OptimizedImage 
+            source={require('./assets/images/Logo_white.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>Bottle Trade</Text>
+        </View>
+        
+        {/* Form Container - vertikal zentriert */}
+        <View style={styles.formContainer}>
+        {currentStep === 1 && renderStep1()}
+        {currentStep === 2 && renderStep2()}
+        {currentStep === 3 && renderStep3()}
+        {currentStep === 4 && renderStep4()}
+        {currentStep === 5 && renderStep5()}
+        
+        {/* Navigation Buttons */}
+        <View style={styles.navigationButtons}>
+          {currentStep > 1 && (
+            <TouchableOpacity
+              style={[styles.navButton, styles.navButtonBack]}
+              onPress={handleBack}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.buttonGradient}
+              />
+              <Text style={styles.buttonText}>Zurück</Text>
+            </TouchableOpacity>
+          )}
+          
+          {currentStep < 5 ? (
+            <TouchableOpacity
+              style={[styles.navButton, styles.navButtonNext]}
+              onPress={handleNext}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.buttonGradient}
+              />
+              <Text style={styles.buttonText}>Weiter</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.navButton, styles.navButtonRegister]}
+              onPress={handleRegister}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.buttonGradient}
+              />
+              <Text style={styles.buttonText}>Registrieren</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
-    position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  hamburgerContainer: {
-    flex: 0,
-    position: 'relative',
-    zIndex: 1000,
-    width: 40,
-    alignItems: 'center',
-  },
-  hamburgerButton: {
-    padding: 5,
-  },
-  hamburgerLine: {
-    width: 22,
-    height: 2.5,
-    backgroundColor: '#FFFFFF',
-    marginVertical: 3,
-    borderRadius: 1.5,
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerRight: {
-    flex: 0,
-    width: 80,
-    alignItems: 'center',
-  },
-  greeting: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  glassContainer: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)', // Dunkelgrau mit Transparenz
-    padding: 30,
-    borderRadius: 15,
-    alignItems: 'center',
     width: '100%',
-    maxWidth: 350,
+    backgroundColor: '#2c2c2c',
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  backButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 70 : 50,
+    left: 20,
+    zIndex: 1000,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)', // Subtiler weißer Border
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  logoContainer: {
+    width: '100%',
+    paddingTop: Platform.OS === 'ios' ? 80 : 60,
+    paddingBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logo: {
-    width: 160,
-    height: 160,
+    width: 300,
+    height: 300,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
     color: '#FFFFFF',
+    fontSize: 38.4,
+    fontWeight: '700',
+    marginTop: 20,
+    letterSpacing: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingBottom: 40,
+  },
+  formContainer: {
+    width: '100%',
+    paddingHorizontal: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepContainer: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  stepTitle: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  stepSubtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 16,
     marginBottom: 30,
     textAlign: 'center',
   },
-  form: {
-    width: '100%',
-    maxWidth: 300,
-  },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 15,
-    color: '#000000',
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  gradientBorder: {
-    borderRadius: 20,
-    marginTop: 10,
-    padding: 1,
-  },
-  glassButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     padding: 18,
-    borderRadius: 19,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  glassButtonText: {
+    borderRadius: 20,
+    marginBottom: 20,
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  linkButton: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  linkText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-    textDecorationLine: 'underline',
-  },
-  // Row Layout Styles
-  rowContainer: {
+  row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 15,
+    marginBottom: 20,
   },
   halfInput: {
     width: '48%',
   },
-  streetInput: {
-    width: '70%',
-  },
-  houseNumberInput: {
-    width: '25%',
-  },
-  zipInput: {
-    width: '30%',
-  },
-  cityInput: {
+  twoThirdsInput: {
     width: '65%',
   },
-  // BTP & Einstellungen Container
-  btpSettingsContainer: {
-    backgroundColor: '#2c2c2c',
-    padding: 15,
-    borderRadius: 10,
-    marginVertical: 15,
-    borderWidth: 1,
+  oneThirdInput: {
+    width: '30%',
+  },
+  imagePickerButton: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  profileImage: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  // BTP Info Styles
-  btpInfo: {
-    marginBottom: 15,
+  imagePlaceholder: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePlaceholderText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+  },
+  btpContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   btpTitle: {
-    color: '#FFD700',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  btpText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    marginBottom: 4,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 10,
     textAlign: 'center',
   },
-  // Checkbox Styles
-  checkboxContainer: {
-    marginTop: 10,
+  btpDescription: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  checkboxItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    paddingVertical: 8,
-    backgroundColor: '#404040',
-    paddingHorizontal: 10,
-    borderRadius: 8,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    borderRadius: 6,
-    marginRight: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
+  checkboxButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  checkboxChecked: {
-    backgroundColor: '#FFD700',
-    borderColor: '#FFD700',
-  },
-  checkmark: {
-    color: '#000000',
-    fontSize: 16,
-    fontWeight: 'bold',
+  checkboxButtonActive: {
+    backgroundColor: 'rgba(76, 175, 80, 0.25)',
+    borderColor: 'rgba(76, 175, 80, 0.5)',
   },
   checkboxText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    flex: 1,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  // Admin Note
-  adminNote: {
+  btpTotal: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+  },
+  btpTotalText: {
     color: '#FFD700',
-    fontSize: 12,
-    textAlign: 'center',
-    fontStyle: 'italic',
-    marginVertical: 10,
+    fontSize: 20,
+    fontWeight: '700',
   },
-  // Profilbild Upload Styles
-  profileImageContainer: {
-    marginVertical: 15,
-    alignItems: 'center',
-    backgroundColor: '#2c2c2c',
-    padding: 15,
-    borderRadius: 10,
+  summaryContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 20,
+    padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  profileImageLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  profileImageButton: {
-    backgroundColor: '#404040',
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    borderStyle: 'dashed',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
-  profileImageText: {
+  summaryLabel: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  summaryValue: {
     color: '#FFFFFF',
     fontSize: 14,
-    textAlign: 'center',
+    fontWeight: '400',
+    flex: 1,
+    textAlign: 'right',
   },
-  // Bildvorschau Styles
-  imagePreviewContainer: {
+  navigationButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  navButton: {
+    flex: 1,
+    paddingVertical: 18,
+    paddingHorizontal: 30,
+    borderRadius: 20,
+    borderWidth: 1.5,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 60,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+    marginHorizontal: 5,
   },
-  imagePreview: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 10,
+  navButtonBack: {
+    backgroundColor: 'rgba(158, 158, 158, 0.25)',
+    borderColor: 'rgba(158, 158, 158, 0.5)',
   },
-  changeImageButton: {
-    backgroundColor: '#404040',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+  navButtonNext: {
+    backgroundColor: 'rgba(33, 150, 243, 0.25)',
+    borderColor: 'rgba(33, 150, 243, 0.5)',
   },
-  changeImageText: {
+  navButtonRegister: {
+    backgroundColor: 'rgba(76, 175, 80, 0.25)',
+    borderColor: 'rgba(76, 175, 80, 0.5)',
+  },
+  buttonGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+  },
+  buttonText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  // Passwort-Anforderungen Styles
-  passwordRequirements: {
-    backgroundColor: '#2c2c2c',
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  requirementsTitle: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  requirement: {
-    color: '#CCCCCC',
-    fontSize: 11,
-    marginBottom: 4,
-  },
-  requirementMet: {
-    color: '#90EE90',
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    zIndex: 1,
   },
 });

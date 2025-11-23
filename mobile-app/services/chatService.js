@@ -55,7 +55,9 @@ class ChatService {
     }
   }
 
-  // Chat löschen (bei Tausch-Abschluss)
+  // Chat löschen - NUR auf explizite Benutzeranfrage
+  // WICHTIG: Chats werden NICHT automatisch gelöscht, wenn ein Tausch abgeschlossen ist.
+  // Benutzer können ihre Chats selbst löschen, wenn sie möchten.
   static async deleteChat(chatId) {
     try {
       // Alle Nachrichten des Chats löschen

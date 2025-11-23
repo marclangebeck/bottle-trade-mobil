@@ -1,8 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, Linking } from 'react-native';
+import { getCurrentUser } from './services/testAuth';
 
-export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, onLogout, isAdmin = false, unreadNotifications = 0, renderButton = true, externalMenuVisible = null, onMenuToggle = null }) {
+export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, onLogout, isAdmin = false, unreadCount = 0, renderButton = true, externalMenuVisible = null, onMenuToggle = null, userName = null, userEmail = null }) {
   const [internalMenuVisible, setInternalMenuVisible] = useState(false);
+  
+  // Hole User-Info direkt, falls nicht über Props übergeben
+  const currentUser = isLoggedIn ? getCurrentUser() : null;
+  const displayEmail = userEmail || (currentUser?.email || '');
+  const displayName = userName || (currentUser?.username || currentUser?.email || '');
   
   // Verwende Innern-State oder externen State
   const isMenuVisible = externalMenuVisible !== null ? externalMenuVisible : internalMenuVisible;
@@ -46,11 +52,10 @@ export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, o
     { id: 'shop', icon: '🛒', text: 'Shop' },
   ];
 
-  // Menü-Items für eingeloggte Benutzer - vereinfacht
+  // Menü-Items für eingeloggte Benutzer
   const loggedInMenuItems = [
-    { id: 'home', icon: '🏠', text: 'Dashboard' },
-    { id: 'notifications', icon: '🔔', text: 'Nachrichten' },
-    { id: 'profil', icon: '👤', text: 'Profil' },
+    { id: 'shop', icon: '🛒', text: 'Shop' },
+    { id: 'community', icon: '👥', text: 'Community' },
   ];
 
   // Admin-Menü-Items (nur für Admins sichtbar)
@@ -76,10 +81,10 @@ export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, o
           <View style={styles.hamburgerLine} />
           <View style={styles.hamburgerLine} />
           <View style={styles.hamburgerLine} />
-          {isLoggedIn && unreadNotifications > 0 && (
+          {isLoggedIn && unreadCount > 0 && (
             <View style={styles.notificationBadge}>
               <Text style={styles.notificationBadgeText}>
-                {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                {unreadCount > 99 ? '99+' : unreadCount}
               </Text>
             </View>
           )}
@@ -100,7 +105,14 @@ export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, o
         >
           <View style={styles.menuContainer}>
             <View style={styles.menuHeader}>
-              <Text style={styles.menuTitle}>Bottle-Trade</Text>
+              <View style={styles.menuTitleContainer}>
+                <Text style={styles.menuTitle}>Bottle-Trade</Text>
+                {isLoggedIn && (displayName || displayEmail) && (
+                  <Text style={styles.menuUserInfo}>
+                    {displayName || displayEmail}
+                  </Text>
+                )}
+              </View>
               <TouchableOpacity onPress={() => setIsMenuVisible(false)}>
                 <Text style={styles.closeButton}>✕</Text>
               </TouchableOpacity>
@@ -201,16 +213,26 @@ const styles = StyleSheet.create({
   menuHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 30,
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
+  menuTitleContainer: {
+    flex: 1,
+  },
   menuTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#4B0000',
+    marginBottom: 4,
+  },
+  menuUserInfo: {
+    fontSize: 11,
+    color: '#4B0000',
+    opacity: 0.6,
+    fontWeight: 'normal',
   },
   closeButton: {
     fontSize: 24,

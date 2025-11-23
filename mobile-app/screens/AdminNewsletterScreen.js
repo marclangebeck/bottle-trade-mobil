@@ -14,7 +14,7 @@ import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
 
-export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletters = [], onCreateNewsletter, isLoggedIn = false }) {
+export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletters = [], onCreateNewsletter, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingNewsletter, setIsCreatingNewsletter] = useState(false);
   const [newsletterData, setNewsletterData] = useState({
@@ -93,7 +93,7 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
         left: 0,
         right: 0,
         zIndex: 1000,
-        borderBottomWidth: 1,
+        borderBottomWidth: 0.5,
         borderBottomColor: 'rgba(255, 255, 255, 0.2)'
       }} />
       
@@ -102,7 +102,8 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
         isLoggedIn={true} 
         onLogout={onLogout} 
         isAdmin={true} 
-        unreadNotifications={0}
+        unreadNotifications={unreadNotifications}
+        unreadHints={unreadHints}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -125,117 +126,130 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
           </View>
           <View style={styles.headerRight} />
         </View>
-      </View>
 
-      <ScrollView style={styles.content}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Newsletter verwalten</Text>
-          
-          {!isCreatingNewsletter ? (
-            <View>
-              <TouchableOpacity 
-                style={styles.createNewsletterButton} 
-                onPress={() => setIsCreatingNewsletter(true)}
-              >
-                <Text style={styles.createNewsletterButtonText}>📧 Neuen Newsletter erstellen</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.newsletterForm}>
-              <Text style={styles.formTitle}>Neuen Newsletter erstellen</Text>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.dashboardContainer}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={handleBack}
+            >
+              <Text style={styles.backButtonText}>← Zurück zum Admin-Bereich</Text>
+            </TouchableOpacity>
+            
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Newsletter verwalten</Text>
               
-              <Text style={styles.label}>Titel *</Text>
-              <TextInput
-                style={styles.input}
-                value={newsletterData.title}
-                onChangeText={(text) => setNewsletterData({...newsletterData, title: text})}
-                placeholder="Newsletter-Titel eingeben"
-                placeholderTextColor="#999"
-              />
-              
-              <Text style={styles.label}>Inhalt *</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={newsletterData.content}
-                onChangeText={(text) => setNewsletterData({...newsletterData, content: text})}
-                placeholder="Newsletter-Inhalt eingeben"
-                placeholderTextColor="#999"
-                multiline
-                numberOfLines={6}
-                textAlignVertical="top"
-              />
-              
-              <Text style={styles.label}>Zielgruppe</Text>
-              <View style={styles.targetGroupContainer}>
-                <Text style={styles.targetGroupText}>📧 Newsletter-Abonnenten</Text>
-                <Text style={styles.targetGroupSubtext}>Nur Benutzer mit aktiviertem Newsletter-Abo</Text>
-              </View>
-              
-              <View style={styles.formButtons}>
-                <TouchableOpacity 
-                  style={styles.cancelButton} 
-                  onPress={() => setIsCreatingNewsletter(false)}
-                >
-                  <Text style={styles.cancelButtonText}>Abbrechen</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.createButton} 
-                  onPress={handleCreateNewsletter}
-                >
-                  <Text style={styles.createButtonText}>Newsletter erstellen</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bestehende Newsletter</Text>
-          {newsletters.length === 0 ? (
-            <Text style={styles.emptyText}>Noch keine Newsletter erstellt</Text>
-          ) : (
-            <View>
-              {newsletters.map((newsletter) => (
-                <View key={newsletter.id} style={styles.newsletterCard}>
-                  <View style={styles.newsletterHeader}>
-                    <Text style={styles.newsletterTitle}>{newsletter.title}</Text>
-                    <Text style={styles.newsletterDate}>{newsletter.createdAt}</Text>
+              {!isCreatingNewsletter ? (
+                <View>
+                  <TouchableOpacity 
+                    style={styles.createNewsletterButton} 
+                    onPress={() => setIsCreatingNewsletter(true)}
+                  >
+                    <Text style={styles.createNewsletterButtonText}>📧 Neuen Newsletter erstellen</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.newsletterForm}>
+                  <Text style={styles.formTitle}>Neuen Newsletter erstellen</Text>
+                  
+                  <Text style={styles.label}>Titel *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newsletterData.title}
+                    onChangeText={(text) => setNewsletterData({...newsletterData, title: text})}
+                    placeholder="Newsletter-Titel eingeben"
+                    placeholderTextColor="#999999"
+                  />
+                  
+                  <Text style={styles.label}>Inhalt *</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    value={newsletterData.content}
+                    onChangeText={(text) => setNewsletterData({...newsletterData, content: text})}
+                    placeholder="Newsletter-Inhalt eingeben"
+                    placeholderTextColor="#999999"
+                    multiline
+                    numberOfLines={6}
+                    textAlignVertical="top"
+                  />
+                  
+                  <Text style={styles.label}>Zielgruppe</Text>
+                  <View style={styles.targetGroupContainer}>
+                    <Text style={styles.targetGroupText}>📧 Newsletter-Abonnenten</Text>
+                    <Text style={styles.targetGroupSubtext}>Nur Benutzer mit aktiviertem Newsletter-Abo</Text>
                   </View>
                   
-                  <Text style={styles.newsletterContent} numberOfLines={3}>
-                    {newsletter.content}
-                  </Text>
-                  
-                  <View style={styles.newsletterStats}>
-                    <Text style={styles.statText}>Zielgruppe: Newsletter-Abonnenten</Text>
-                    <Text style={styles.statText}>Status: {newsletter.status || 'Entwurf'}</Text>
-                  </View>
-                  
-                  <View style={styles.newsletterActions}>
+                  <View style={styles.formButtons}>
                     <TouchableOpacity 
-                      style={[styles.actionButton, styles.sendButton]} 
-                      onPress={() => handleSendNewsletter(newsletter)}
+                      style={styles.cancelButton} 
+                      onPress={() => setIsCreatingNewsletter(false)}
                     >
-                      <Text style={styles.actionButtonText}>📤 Senden</Text>
+                      <Text style={styles.cancelButtonText}>Abbrechen</Text>
                     </TouchableOpacity>
                     
                     <TouchableOpacity 
-                      style={[styles.actionButton, styles.deleteButton]} 
-                      onPress={() => handleDeleteNewsletter(newsletter)}
+                      style={styles.createButton} 
+                      onPress={handleCreateNewsletter}
                     >
-                      <Text style={styles.actionButtonText}>🗑️ Löschen</Text>
+                      <Text style={styles.createButtonText}>Newsletter erstellen</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
-              ))}
+              )}
             </View>
-          )}
+              
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Bestehende Newsletter</Text>
+              {newsletters.length === 0 ? (
+                <Text style={styles.emptyText}>Noch keine Newsletter erstellt</Text>
+              ) : (
+                <View>
+                  {newsletters.map((newsletter) => (
+                    <View key={newsletter.id} style={styles.newsletterCard}>
+                      <View style={styles.newsletterHeader}>
+                        <Text style={styles.newsletterTitle}>{newsletter.title}</Text>
+                        <Text style={styles.newsletterDate}>{newsletter.createdAt}</Text>
+                      </View>
+                      
+                      <Text style={styles.newsletterContent} numberOfLines={3}>
+                        {newsletter.content}
+                      </Text>
+                      
+                      <View style={styles.newsletterStats}>
+                        <Text style={styles.statText}>Zielgruppe: Newsletter-Abonnenten</Text>
+                        <Text style={styles.statText}>Status: {newsletter.status || 'Entwurf'}</Text>
+                      </View>
+                      
+                      <View style={styles.newsletterActions}>
+                        <TouchableOpacity 
+                          style={[styles.actionButton, styles.sendButton]} 
+                          onPress={() => handleSendNewsletter(newsletter)}
+                        >
+                          <Text style={styles.actionButtonText}>📤 Senden</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                          style={[styles.actionButton, styles.deleteButton]} 
+                          onPress={() => handleDeleteNewsletter(newsletter)}
+                        >
+                          <Text style={styles.actionButtonText}>🗑️ Löschen</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+          </ScrollView>
         </View>
-      </ScrollView>
-
       <Footer />
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+      <BottomNavigation
+        onNavigate={onNavigate}
+        isLoggedIn={isLoggedIn}
+        unreadNotifications={unreadNotifications}
+        unreadHints={unreadHints}
+      />
     </View>
   );
 }
@@ -243,7 +257,7 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Gleiche Farbe wie StatusBar-Ersatz-View, verhindert weißen Strich
   },
   contentContainer: {
     flex: 1,
@@ -253,22 +267,37 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
     position: 'relative',
     marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    minHeight: 90,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
+    // Glassmorphism Effekt
+    shadowColor: '#DAA520',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   backButton: {
-    padding: 10,
+    backgroundColor: '#D2691E',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowColor: '#D2691E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   backButtonText: {
-    color: '#FFD700',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -285,7 +314,7 @@ const styles = StyleSheet.create({
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -299,82 +328,104 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2c2c2c', // Dunkler Text auf hellem Header
     textAlign: 'center',
   },
   content: {
     flex: 1,
+  },
+  dashboardContainer: {
     padding: 20,
   },
   section: {
     marginBottom: 30,
   },
   sectionTitle: {
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 15,
+    borderBottomWidth: 2,
+    borderBottomColor: '#D2691E',
+    paddingBottom: 8,
   },
   createNewsletterButton: {
-    backgroundColor: 'rgba(255, 215, 0, 0.2)',
-    borderWidth: 1,
-    borderColor: '#FFD700',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
+    borderColor: '#D2691E',
+    borderStyle: 'dashed',
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
   },
   createNewsletterButtonText: {
-    color: '#FFD700',
+    color: '#D2691E',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   newsletterForm: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: '#FFFFFF',
     padding: 20,
-    borderRadius: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 58, 59, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   formTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    color: '#2f3a3b',
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: '#D2691E',
+    paddingBottom: 8,
   },
   label: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: '#2f3a3b',
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 8,
     marginTop: 15,
   },
   input: {
-    backgroundColor: '#FFFFFF',
-    color: '#000000',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: '#F8F9FA',
+    color: '#333333',
+    padding: 14,
+    borderRadius: 10,
     fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#DDD',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
   },
   textArea: {
     height: 120,
     textAlignVertical: 'top',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 10,
+    padding: 14,
+    color: '#333333',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
   },
   targetGroupContainer: {
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    backgroundColor: '#F8F9FA',
     padding: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.3)',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#D2691E',
   },
   targetGroupText: {
-    color: '#FFD700',
+    color: '#D2691E',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   targetGroupSubtext: {
-    color: '#CCCCCC',
+    color: '#666666',
     fontSize: 14,
     marginTop: 5,
   },
@@ -384,40 +435,51 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   cancelButton: {
-    backgroundColor: 'rgba(244, 67, 54, 0.2)',
-    borderWidth: 1,
-    borderColor: '#F44336',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     flex: 0.45,
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#F44336',
+    color: '#2f3a3b',
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   createButton: {
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    borderWidth: 1,
-    borderColor: '#4CAF50',
+    backgroundColor: '#D2691E',
+    borderWidth: 0,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     flex: 0.45,
     alignItems: 'center',
+    shadowColor: '#D2691E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   createButtonText: {
-    color: '#4CAF50',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
   },
   newsletterCard: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: '#FFFFFF',
     padding: 20,
-    borderRadius: 10,
+    borderRadius: 16,
     marginBottom: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 58, 59, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   newsletterHeader: {
     flexDirection: 'row',
@@ -426,18 +488,18 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   newsletterTitle: {
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     fontSize: 18,
     fontWeight: 'bold',
     flex: 1,
     marginRight: 10,
   },
   newsletterDate: {
-    color: '#CCCCCC',
+    color: '#666666',
     fontSize: 14,
   },
   newsletterContent: {
-    color: '#FFFFFF',
+    color: '#333333',
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 15,
@@ -446,7 +508,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   statText: {
-    color: '#CCCCCC',
+    color: '#666666',
     fontSize: 12,
     marginBottom: 5,
   },
@@ -462,21 +524,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sendButton: {
-    backgroundColor: 'rgba(33, 150, 243, 0.2)',
-    borderWidth: 1,
-    borderColor: '#2196F3',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
+    borderColor: '#D2691E',
   },
   deleteButton: {
-    backgroundColor: 'rgba(244, 67, 54, 0.2)',
-    borderWidth: 1,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
     borderColor: '#F44336',
   },
   actionButtonText: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    color: '#2f3a3b',
   },
   emptyText: {
-    color: '#CCCCCC',
+    color: '#666666',
     fontSize: 16,
     textAlign: 'center',
     fontStyle: 'italic',

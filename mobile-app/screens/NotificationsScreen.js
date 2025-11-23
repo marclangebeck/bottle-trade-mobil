@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -13,25 +13,145 @@ import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
 
-export default function NotificationsScreen({ onNavigate, onLogout, notifications = [], onUpdateNotificationReadStatus, onMarkAllAsRead, onDeleteNotification, surveys = [], newsletters = [], systemMessages = [], chats = [], isLoggedIn = false }) {
-  const [activeTab, setActiveTab] = useState('all'); // all, system, trade, messages
+import { getCurrentUser } from '../services/testAuth';
+
+export default function NotificationsScreen({
+  onNavigate,
+  onLogout,
+  notifications = [],
+  onUpdateNotificationReadStatus,
+  onUpdateNotificationsReadByRequestId,
+  onMarkAllAsRead,
+  onDeleteNotification,
+  onMarkChatAsRead = null,
+  onDeleteChat = null,
+  surveys = [],
+  newsletters = [],
+  systemMessages = [],
+  chats = [],
+  isLoggedIn = false,
+  onTradeAccept = null,
+  onTradeDecline = null,
+  unreadNotifications = 0,
+  unreadHints = 0,
+}) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
 
   // Verwende die übergebenen Notifications
-  const allNotifications = notifications;
+  const currentUser = getCurrentUser();
+  const currentUserId = currentUser?.uid;
+  // Zeige nur für den aktuellen User relevante Notifications
+  // Filter auf relevante Notifications für den aktuellen Nutzer
+  const filteredForUser = notifications.filter(n => {
+    if (n.type === 'trade') {
+      return n.toUserId === currentUserId; // eingehende Anfragen
+    }
+    if (n.type === 'trade-info') {
+      return n.fromUserId === currentUserId; // Infos für den Absender
+    }
+    return true; // andere Typen wie system/newsletter/chat
+  });
 
-  const tabs = [
-    { id: 'all', label: 'Alle', count: allNotifications.length },
-    { id: 'trade', label: 'Tausch', count: allNotifications.filter(n => n.type === 'trade').length },
-    { id: 'system', label: 'System', count: allNotifications.filter(n => n.type === 'system').length },
-    { id: 'messages', label: 'Chat', count: chats.filter(chat => chat.unreadCount > 0).length }
-  ];
+  // Deduplizierung: für Tausch anhand requestId, sonst anhand id
+  const seenKeys = new Set();
+  const allNotifications = filteredForUser.filter(n => {
+    const key = n.type === 'trade' || n.type === 'trade-info' ? `trade:${n.requestId}` : `id:${n.id}`;
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    return true;
+  });
 
-  const filteredNotifications = activeTab === 'all' 
-    ? allNotifications 
-    : activeTab === 'messages'
-    ? chats // Zeige Chats statt Chat-Benachrichtigungen
-    : allNotifications.filter(n => n.type === activeTab);
+  // Unread-/Total-Counts für Tab-Anzeige (unread/total)
+  const unreadAll = allNotifications.filter(n => !n.isRead).length;
+  const totalAll = allNotifications.length;
+  const allTrade = allNotifications.filter(n => n.type === 'trade');
+  const unreadTrade = allTrade.filter(n => !n.isRead).length;
+  const totalTrade = allTrade.length;
+  const allSystem = allNotifications.filter(n => n.type === 'system');
+  const unreadSystem = allSystem.filter(n => !n.isRead).length;
+  const totalSystem = allSystem.length;
+  const unreadChats = chats.filter(chat => chat.unreadCount > 0).length;
+  const totalChats = chats.length;
+
+  // Vereinheitlichte Liste: Notifications + Chats als Einträge (volle Breite)
+  const actionPressRef = useRef(false);
+
+  const combinedEntries = useMemo(() => {
+    // Alle Chats anzeigen (nicht nur neue), aber gelöschte Chats für beide Teilnehmer ausblenden
+    // WICHTIG: Pending Chats (Tauschanfragen) NICHT als Chat-Notifications anzeigen
+    // Diese werden bereits als Trade-Notifications angezeigt
+    const chatEntries = (chats || [])
+      .filter(chat => {
+        // Gelöschte Chats ausblenden
+        if (chat.deletedBy) return false;
+        // Pending Chats (Tauschanfragen) ausblenden - werden bereits als Trade-Notifications angezeigt
+        if (chat.tradeStatus === 'pending' && chat.tradeRequestId) return false;
+        return true;
+      })
+      .map(chat => ({
+      id: `chat-entry-${chat.id}`,
+      type: 'chat',
+      title: (() => {
+        // Bestimme Gegenüber anhand participants vs currentUserId
+        if (Array.isArray(chat.participants) && Array.isArray(chat.participantNames)) {
+          const otherIndex = chat.participants.findIndex(pid => pid !== currentUserId);
+          if (otherIndex >= 0) {
+            return chat.participantNames[otherIndex] || 'Chat';
+          }
+        }
+        return chat.participantNames?.filter(n => n !== 'Du')[0] || 'Chat';
+      })(),
+      message: chat.lastMessage || 'Chat gestartet',
+      timestamp: chat.lastMessageTime || '',
+      isRead: (chat.unreadCount || 0) === 0,
+      priority: chat.unreadCount > 0 ? 'high' : 'low',
+      chatRef: chat,
+      isDeleted: !!chat.deletedBy,
+    }));
+    // Map bestehende Notifications auf vereinheitlichtes Format (inkl. Chat-Message-Notifs)
+    const notifEntries = (allNotifications || [])
+      .map(n => ({
+      id: n.id,
+      type: n.type === 'message' ? 'chat' : (n.type === 'trade-info' ? 'trade' : n.type),
+      title: n.title,
+      message: n.message,
+      timestamp: n.timestamp,
+      isRead: !!n.isRead,
+      priority: n.priority || 'low',
+      raw: n,
+      chatId: n.chatId, // Für Chat-Nachrichten
+      senderName: n.senderName, // Für Chat-Nachrichten
+    }));
+    // Kombiniere Chat-Einträge und Notifications
+    // Für Chat-Message-Notifications: Zeige sie als separate Einträge, aber verhindere Duplikate mit Chat-Einträgen
+    const chatIdsWithEntries = new Set(chatEntries.map(e => e.chatRef?.id));
+    const messageNotifications = notifEntries.filter(n => n.type === 'chat' && n.chatId);
+    const otherNotifications = notifEntries.filter(n => n.type !== 'chat' || !n.chatId);
+    
+    // Filtere Chat-Message-Notifications heraus, wenn bereits ein Chat-Eintrag existiert
+    // ODER zeige beide: Chat-Eintrag für Übersicht und Notification für einzelne Nachricht
+    // Für bessere UX: Zeige Chat-Message-Notifications als separate Einträge
+    const entries = [...chatEntries, ...notifEntries];
+    
+    // WICHTIG: Deduplizierung - entferne Einträge mit identischen IDs
+    const uniqueEntries = [];
+    const seenIds = new Set();
+    entries.forEach(entry => {
+      if (!seenIds.has(entry.id)) {
+        seenIds.add(entry.id);
+        uniqueEntries.push(entry);
+      } else {
+        console.warn('⚠️ Doppelter Eintrag gefunden und entfernt:', entry.id);
+      }
+    });
+    
+    // Grobe Sortierung: neueste zuerst, fallback: Chats oben
+    return uniqueEntries.sort((a, b) => {
+      const timeA = a.timestamp || '';
+      const timeB = b.timestamp || '';
+      return timeB.localeCompare(timeA); // Neueste zuerst
+    });
+  }, [allNotifications, chats]);
 
   const unreadCount = allNotifications.filter(n => !n.isRead).length;
 
@@ -39,7 +159,7 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
     switch(type) {
       case 'trade': return '🍷';
       case 'system': return '📢';
-      case 'message': return '💬';
+      case 'chat': return '💬';
       default: return '📋';
     }
   };
@@ -53,10 +173,63 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
     }
   };
 
+  // Prüfe, ob ein Tausch abgeschlossen wurde
+  const isTradeCompleted = (entry) => {
+    // Prüfe sowohl trade als auch trade-info Einträge
+    if (entry.type !== 'trade') {
+      return false;
+    }
+    
+    // Prüfe zuerst direkt im entry.raw
+    if (entry.raw?.tradeStatus === 'accepted') {
+      return true;
+    }
+    
+    // Prüfe direkt im Titel/Message der Notification
+    if (entry.raw?.title?.includes('angenommen') || entry.raw?.title?.includes('akzeptiert') || entry.raw?.title?.includes('durchgeführt')) {
+      return true;
+    }
+    
+    // Suche nach Notifications, die zeigen, dass der Tausch akzeptiert wurde
+    const requestId = entry.raw?.requestId;
+    if (!requestId) {
+      return false;
+    }
+    
+    // Prüfe alle Notifications mit dieser requestId
+    const matchingNotifications = notifications.filter(n => 
+      n.requestId === requestId
+    );
+    
+    // Prüfe auf "angenommen" oder "akzeptiert" im Titel
+    const acceptedNotification = matchingNotifications.find(n => 
+      (n.type === 'trade' || n.type === 'trade-info') && 
+      (n.title?.includes('angenommen') || n.title?.includes('akzeptiert') || n.title?.includes('durchgeführt'))
+    );
+    
+    if (acceptedNotification) {
+      return true;
+    }
+    
+    // Prüfe optional auch in Chats, wenn vorhanden
+    if (chats && chats.length > 0) {
+      const relatedChat = chats.find(c => c.tradeRequestId === requestId);
+      if (relatedChat && relatedChat.tradeStatus === 'accepted') {
+        return true;
+      }
+    }
+    
+    return false;
+  };
 
-  const markAsRead = (notificationId) => {
+
+  const markAsRead = (notification) => {
+    if ((notification.type === 'trade' || notification.type === 'trade-info') && notification.requestId && onUpdateNotificationsReadByRequestId) {
+      onUpdateNotificationsReadByRequestId(notification.requestId, true);
+      return;
+    }
     if (onUpdateNotificationReadStatus) {
-      onUpdateNotificationReadStatus(notificationId, true);
+      onUpdateNotificationReadStatus(notification.id, true);
     }
   };
 
@@ -82,8 +255,13 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
   };
 
   const handleNotificationPress = (notification) => {
-    // Als gelesen markieren
-    markAsRead(notification.id);
+    // WICHTIG: trade-info Notifications für Person A werden NICHT automatisch als gelesen markiert
+    // Person A soll selbst entscheiden, wann die Notification gelöscht wird
+    // Nur andere Notification-Typen werden beim Anklicken automatisch als gelesen markiert
+    if (notification.type !== 'trade-info') {
+      // Als gelesen markieren (ganze Notification übergeben)
+      markAsRead(notification);
+    }
     
     // Wenn es eine Umfrage-Benachrichtigung ist, zur Umfrage navigieren
     if (notification.type === 'system' && (notification.title.includes('Umfrage') || notification.message.includes('BTP'))) {
@@ -136,6 +314,30 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
         Alert.alert('Fehler', 'Newsletter nicht gefunden!');
       }
     }
+    // Tauschanfrage → Auswahl im Weinregal öffnen
+    // WICHTIG: Nur Person B (Empfänger) mit type === 'trade' soll navigieren
+    // Person A (Absender) mit type === 'trade-info' soll KEINE Navigation bekommen
+    else if ((notification.type === 'trade' || notification.type === 'trade-info') && notification.requestId) {
+      // Prüfe ob der aktuelle User Person B (Empfänger) ist
+      // type === 'trade' bedeutet: Notification für Empfänger (toUserId === currentUserId)
+      // type === 'trade-info' bedeutet: Notification für Absender (fromUserId === currentUserId)
+      
+      if (notification.type === 'trade' && notification.toUserId === currentUserId) {
+        // Person B (Empfänger) → Navigiere zum Weinregal von A (fromUserId)
+        const fromUserId = notification.fromUserId;
+        onNavigate('mein-weinregal', { viewUserId: fromUserId, tradeRequestId: notification.requestId });
+      } else if (notification.type === 'trade-info' && notification.fromUserId === currentUserId) {
+        // Person A (Absender) → KEINE Navigation, nur Info anzeigen
+        Alert.alert(
+          notification.title || 'Tausch involviert',
+          notification.message || 'Du bist in einen Tausch involviert.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        // Fallback für alte Daten oder unerwartete Fälle
+        console.log('⚠️ Unerwartete Trade-Notification-Struktur:', notification);
+      }
+    }
     else if (notification.type === 'system' || notification.title.includes('Systemnachricht')) {
       console.log('Systemnachricht-Benachrichtigung gefunden!');
       console.log('Title:', notification.title);
@@ -157,14 +359,31 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
       }
     } 
     // Wenn es eine Chat-Nachricht ist, zum Chat navigieren
-    else if (notification.type === 'message' && notification.chatId) {
+    else if (notification.type === 'chat' && (notification.chatId || notification.chatRef)) {
       console.log('Chat-Benachrichtigung gefunden!');
-      console.log('ChatId:', notification.chatId);
-      
-      // Finde den entsprechenden Chat
+      const chat = notification.chatRef || chats.find(c => c.id === notification.chatId);
+      if (chat) {
+        console.log('Navigiere zu Chat:', chat.id);
+        // Markiere Chat als gelesen wenn er über Notification geöffnet wird
+        if (onMarkChatAsRead && chat.id) {
+          onMarkChatAsRead(chat.id);
+        }
+        onNavigate('chat-room', { chat: chat });
+      } else {
+        console.log('Chat nicht gefunden!');
+        Alert.alert('Fehler', 'Chat nicht gefunden!');
+      }
+    }
+    // Wenn es eine Chat-Message-Notification ist (neue Nachricht in bestehendem Chat)
+    else if (notification.type === 'message' && notification.chatId) {
+      console.log('Chat-Message-Notification gefunden!');
       const chat = chats.find(c => c.id === notification.chatId);
       if (chat) {
         console.log('Navigiere zu Chat:', chat.id);
+        // Markiere Chat als gelesen wenn er über Notification geöffnet wird
+        if (onMarkChatAsRead && chat.id) {
+          onMarkChatAsRead(chat.id);
+        }
         onNavigate('chat-room', { chat: chat });
       } else {
         console.log('Chat nicht gefunden!');
@@ -179,6 +398,11 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
 
   const handleChatPress = (chat) => {
     console.log('Chat gedrückt:', chat);
+    // Gelöschte Chats können nicht geöffnet werden
+    if (chat.deletedBy) {
+      Alert.alert('Chat verlassen', 'Der Teilnehmer hat den Chat verlassen.');
+      return;
+    }
     onNavigate('chat-room', { chat: chat });
   };
 
@@ -195,7 +419,7 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
         left: 0,
         right: 0,
         zIndex: 1000,
-        borderBottomWidth: 1,
+        borderBottomWidth: 0.5,
         borderBottomColor: 'rgba(255, 255, 255, 0.2)'
       }} />
       
@@ -232,129 +456,162 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
           
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.dashboardContainer}>
-              {/* Tabs */}
-              <View style={styles.tabsContainer}>
-                {tabs.map((tab) => (
-                  <TouchableOpacity
-                    key={tab.id}
-                    style={[styles.tab, activeTab === tab.id && styles.activeTab]}
-                    onPress={() => setActiveTab(tab.id)}
-                  >
-                    <Text style={[styles.tabText, activeTab === tab.id && styles.activeTabText]}>
-                      {tab.label}
-                    </Text>
-                    {tab.count > 0 && (
-                      <View style={styles.tabBadge}>
-                        <Text style={styles.tabBadgeText}>{tab.count}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
+          {/* Keine Tabs mehr – einheitliche Liste "Alle" */}
 
-              {/* Action Buttons */}
-              <View style={styles.actionButtonsContainer}>
-                {unreadCount > 0 && (
-                  <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
-                    <Text style={styles.markAllButtonText}>Alle als gelesen markieren</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity 
-                  style={styles.chatButton} 
-                  onPress={() => onNavigate('chat-list')}
-                >
-                  <Text style={styles.chatButtonText}>💬 Chats öffnen</Text>
-                </TouchableOpacity>
-              </View>
+          {/* Aktion: Alle als gelesen markieren (optional) */}
+          {unreadCount > 0 && (
+            <View style={styles.actionButtonsContainer}>
+              <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
+                <Text style={styles.markAllButtonText}>Alle als gelesen markieren</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-              {/* Notifications List */}
-              <View style={styles.notificationsList}>
-                {filteredNotifications.length === 0 ? (
+              {/* Einheitsliste über gesamte Breite */}
+              <View style={styles.fullList}>
+                {combinedEntries.length === 0 ? (
                   <View style={styles.emptyState}>
                     <Text style={styles.emptyIcon}>📭</Text>
                     <Text style={styles.emptyTitle}>Keine Nachrichten</Text>
                     <Text style={styles.emptySubtitle}>
-                      {activeTab === 'all' 
-                        ? 'Du hast noch keine Nachrichten erhalten.'
-                        : activeTab === 'messages'
-                        ? 'Du hast keine ungelesenen Chats.'
-                        : `Keine ${activeTab === 'trade' ? 'Tausch-' : 'System-'}Benachrichtigungen.`
-                      }
+                      Du hast noch keine Nachrichten erhalten.
                     </Text>
                   </View>
-                ) : activeTab === 'messages' ? (
-                  // Chat-Liste anzeigen (nur Chats mit ungelesenen Nachrichten)
-                  filteredNotifications.filter(chat => chat.unreadCount > 0).map((chat) => (
-                    <TouchableOpacity
-                      key={chat.id}
-                      style={[styles.notificationCard, chat.unreadCount > 0 && styles.unreadCard]}
-                      onPress={() => handleChatPress(chat)}
-                    >
-                      <View style={styles.notificationHeader}>
-                        <Text style={styles.notificationIcon}>💬</Text>
-                        <View style={styles.notificationContent}>
-                          <Text style={[styles.notificationTitle, chat.unreadCount > 0 && styles.unreadText]}>
-                            {chat.participantNames.filter(name => name !== 'Du').join(', ')}
-                          </Text>
-                          <Text style={styles.notificationMessage}>
-                            {chat.lastMessage}
-                          </Text>
+                ) : (
+                  combinedEntries.map((entry, index) => {
+                    const key = entry.id || `entry-${index}`;
+                    const bgColor = entry.type === 'chat' ? 'rgba(244,67,54,0.18)' : (entry.type === 'trade' ? 'rgba(76,175,80,0.18)' : 'rgba(33,150,243,0.18)');
+                    // Zwei-zeilige Überschrift nach Typ
+                    let headingTop = '';
+                    let headingBottom = '';
+                    if (entry.type === 'chat') {
+                      // Verwende den bereits in entry.title gespeicherten Namen
+                      let otherName = entry.title || 'Unbekannt';
+                      // Fallback: Versuche aus chatRef zu holen
+                      if (otherName === 'Chat' || otherName === 'Unbekannt') {
+                        if (Array.isArray(entry.chatRef?.participants) && Array.isArray(entry.chatRef?.participantNames)) {
+                          const idxOther = entry.chatRef.participants.findIndex(pid => pid !== currentUserId);
+                          if (idxOther >= 0) otherName = entry.chatRef.participantNames[idxOther] || otherName;
+                        } else {
+                          otherName = entry.chatRef?.participantNames?.find(n => n !== 'Du') || otherName;
+                        }
+                      }
+                      headingTop = 'Nachricht von';
+                      headingBottom = otherName;
+                    } else if (entry.type === 'trade') {
+                      // Versuche Username aus verschiedenen Quellen zu holen
+                      let fromName = entry.raw?.fromUserName || entry.raw?.fromUser?.username || entry.raw?.fromUser?.email || entry.message?.match(/von\s+([^"]+)/)?.[1] || 'Unbekannt';
+                      // Entferne "Tauschpartner" Fallback
+                      if (fromName === 'Tauschpartner') {
+                        fromName = entry.raw?.fromUser?.firstName && entry.raw?.fromUser?.lastName 
+                          ? `${entry.raw.fromUser.firstName} ${entry.raw.fromUser.lastName}`
+                          : entry.raw?.fromUser?.email || 'Unbekannt';
+                      }
+                      headingTop = 'Tauschanfrage von';
+                      headingBottom = fromName;
+                    } else if (entry.type === 'chat' && entry.chatId && entry.raw?.type === 'message') {
+                      // Chat-Message-Notification (neue Nachricht in bestehendem Chat)
+                      const senderName = entry.senderName || entry.raw?.senderName || 'Unbekannt';
+                      headingTop = 'Neue Nachricht von';
+                      headingBottom = senderName;
+                    } else {
+                      headingTop = 'Systemnachricht vom';
+                      headingBottom = 'Admin';
+                    }
+                    const isCompleted = entry.type === 'trade' && isTradeCompleted(entry);
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          styles.fullRow, 
+                          index > 0 && styles.rowDivider, 
+                          { backgroundColor: bgColor },
+                          isCompleted && styles.fullRowWithButton
+                        ]}
+                        onPress={() => {
+                          if (actionPressRef.current) return;
+                          if (entry.type === 'chat' && entry.chatRef) {
+                            handleChatPress(entry.chatRef);
+                          } else if (entry.type === 'chat' && entry.chatId && entry.raw?.type === 'message') {
+                            // Chat-Message-Notification: Navigiere zum Chat
+                            const chat = chats.find(c => c.id === entry.chatId);
+                            if (chat) {
+                              // Markiere Notification als gelesen
+                              if (entry.raw && onUpdateNotificationReadStatus) {
+                                onUpdateNotificationReadStatus(entry.raw.id, true);
+                              }
+                              // Markiere Chat als gelesen
+                              if (onMarkChatAsRead) {
+                                onMarkChatAsRead(chat.id);
+                              }
+                              onNavigate('chat-room', { chat: chat });
+                            }
+                          } else {
+                            handleNotificationPress(entry.raw || entry);
+                          }
+                        }}
+                        activeOpacity={0.9}
+                      >
+                        {/* Icon links */}
+                        <View style={styles.rowIconContainer}>
+                          <Text style={styles.rowIconText}>{getNotificationIcon(entry.type)}</Text>
                         </View>
-                        <View style={styles.notificationMeta}>
-                          {chat.unreadCount > 0 && (
-                            <View style={styles.unreadBadge}>
-                              <Text style={styles.unreadBadgeText}>{chat.unreadCount}</Text>
+                        {/* Text mittig */}
+                        <View style={styles.rowInfoContainer}>
+                          <View style={styles.rowTitleContainer}>
+                            <Text style={styles.rowTitleLine} numberOfLines={1}>{headingTop}</Text>
+                            <Text style={styles.rowTitleLine} numberOfLines={1}>{headingBottom}</Text>
+                          </View>
+                          <Text style={styles.rowMessage} numberOfLines={2}>{entry.message}</Text>
+                          {/* Abgeschlossen-Button für abgeschlossene Tauschanfragen */}
+                          {isCompleted && (
+                            <View style={styles.completedButtonContainer}>
+                              <View style={styles.completedButton}>
+                                <Text style={styles.completedButtonText}>Abgeschlossen</Text>
+                              </View>
                             </View>
                           )}
-                          <Text style={styles.timestamp}>{chat.lastMessageTime}</Text>
                         </View>
-                      </View>
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  // Normale Benachrichtigungen anzeigen
-                  filteredNotifications.map((notification) => (
-                    <TouchableOpacity
-                      key={notification.id}
-                      style={[styles.notificationCard, !notification.isRead && styles.unreadCard]}
-                      onPress={() => handleNotificationPress(notification)}
-                    >
-                      <View style={styles.notificationHeader}>
-                        <Text style={styles.notificationIcon}>
-                          {getNotificationIcon(notification.type)}
-                        </Text>
-                        <View style={styles.notificationContent}>
-                          <Text style={[styles.notificationTitle, !notification.isRead && styles.unreadText]}>
-                            {notification.title}
-                          </Text>
-                          <Text style={styles.notificationMessage}>
-                            {notification.message}
-                          </Text>
+                        {/* Meta rechts */}
+                        <View style={styles.rowMetaContainer}>
+                          {!entry.isRead && <View style={styles.priorityDotFull} />}
+                          <Text style={styles.rowTime}>{entry.timestamp}</Text>
+                          <View style={styles.rowActionsGrid}>
+                            {/* Als gelesen */}
+                            <TouchableOpacity
+                              style={styles.rowActionSquare}
+                              onPressIn={() => { actionPressRef.current = true; }}
+                              onPressOut={() => { setTimeout(() => { actionPressRef.current = false; }, 0); }}
+                              onPress={() => {
+                                if (entry.type === 'chat' && entry.chatRef && onMarkChatAsRead) {
+                                  onMarkChatAsRead(entry.chatRef.id);
+                                } else if (entry.raw) {
+                                  markAsRead(entry.raw);
+                                }
+                              }}
+                            >
+                              <Text style={styles.rowActionIcon}>✓</Text>
+                            </TouchableOpacity>
+                            {/* Löschen */}
+                            <TouchableOpacity
+                              style={styles.rowActionSquare}
+                              onPressIn={() => { actionPressRef.current = true; }}
+                              onPressOut={() => { setTimeout(() => { actionPressRef.current = false; }, 0); }}
+                              onPress={() => {
+                                if (entry.type === 'chat' && entry.chatRef && onDeleteChat) {
+                                  onDeleteChat(entry.chatRef.id);
+                                } else if (entry.raw) {
+                                  handleDeleteNotification(entry.raw.id);
+                                }
+                              }}
+                            >
+                              <Text style={styles.rowActionIcon}>🗑️</Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
-                        <View style={styles.notificationMeta}>
-                          <View style={[styles.priorityDot, { backgroundColor: getPriorityColor(notification.priority) }]} />
-                          <Text style={styles.timestamp}>{notification.timestamp}</Text>
-                        </View>
-                      </View>
-                      
-                      <View style={styles.notificationActions}>
-                        {!notification.isRead && (
-                          <TouchableOpacity 
-                            style={styles.markReadButton}
-                            onPress={() => markAsRead(notification.id)}
-                          >
-                            <Text style={styles.markReadButtonText}>Als gelesen markieren</Text>
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity 
-                          style={styles.deleteButton}
-                          onPress={() => handleDeleteNotification(notification.id)}
-                        >
-                          <Text style={styles.deleteButtonText}>🗑️ Löschen</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </TouchableOpacity>
-                  ))
+                      </TouchableOpacity>
+                    );
+                  })
                 )}
               </View>
             </View>
@@ -362,7 +619,12 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
         </View>
         <Footer />
       </View>
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+          <BottomNavigation
+            onNavigate={onNavigate}
+            isLoggedIn={isLoggedIn}
+            unreadNotifications={unreadNotifications}
+            unreadHints={unreadHints}
+          />
     </View>
   );
 }
@@ -370,7 +632,7 @@ export default function NotificationsScreen({ onNavigate, onLogout, notification
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Gleiche Farbe wie StatusBar-Ersatz-View, verhindert weißen Strich
   },
   contentContainer: {
     flex: 1,
@@ -380,16 +642,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
     position: 'relative',
     marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    minHeight: 90,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
+    // Glassmorphism Effekt
+    shadowColor: '#DAA520',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   hamburgerContainer: {
     flex: 0,
@@ -404,7 +672,7 @@ const styles = StyleSheet.create({
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -418,9 +686,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2c2c2c', // Dunkler Text auf hellem Header
     textAlign: 'center',
   },
   badgeContainer: {
@@ -455,7 +723,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dashboardContainer: {
-    padding: 20,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   tabsContainer: {
     flexDirection: 'row',
@@ -535,6 +804,107 @@ const styles = StyleSheet.create({
   },
   notificationsList: {
     marginBottom: 20,
+  },
+  fullList: {
+    marginBottom: 0,
+  },
+  fullRow: {
+    minHeight: 98,
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 0,
+  },
+  fullRowWithButton: {
+    minHeight: 140,
+  },
+  rowDivider: {
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(0,0,0,0.18)',
+  },
+  rowIconContainer: {
+    width: 40,
+    alignItems: 'center',
+  },
+  rowIconText: {
+    fontSize: 20,
+  },
+  rowInfoContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  rowTitleContainer: {
+    marginBottom: 2,
+  },
+  rowTitleLine: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2f3a3b',
+    lineHeight: 20,
+  },
+  rowMessage: {
+    fontSize: 14,
+    color: '#4b4b4b',
+  },
+  completedButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    width: '100%',
+  },
+  completedButton: {
+    backgroundColor: 'rgba(244, 67, 54, 0.4)',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(244, 67, 54, 0.6)',
+    alignSelf: 'center',
+  },
+  completedButtonText: {
+    color: '#F44336',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  rowMetaContainer: {
+    alignItems: 'flex-end',
+    marginLeft: 8,
+    width: 120,
+    marginRight: 12,
+  },
+  priorityDotFull: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#F44336',
+    marginBottom: 6,
+  },
+  rowTime: {
+    fontSize: 12,
+    color: '#999',
+  },
+  rowActionsGrid: {
+    marginTop: 6,
+    width: 96,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    justifyContent: 'flex-end',
+  },
+  rowActionSquare: {
+    width: 46,
+    height: 46,
+    backgroundColor: '#EEEEEE',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rowActionIcon: {
+    fontSize: 16,
   },
   notificationCard: {
     backgroundColor: 'rgba(60, 60, 60, 0.8)',
@@ -622,6 +992,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
+  tradeAcceptButton: {
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    borderRadius: 6,
+    padding: 8,
+    alignItems: 'center',
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  tradeAcceptButtonText: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  tradeDeclineButton: {
+    backgroundColor: 'rgba(244, 67, 54, 0.2)',
+    borderRadius: 6,
+    padding: 8,
+    alignItems: 'center',
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  tradeDeclineButtonText: {
+    color: '#F44336',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 40,
@@ -633,12 +1031,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: '#CCCCCC',
+    color: '#2f3a3b',
     textAlign: 'center',
   },
   unreadBadge: {

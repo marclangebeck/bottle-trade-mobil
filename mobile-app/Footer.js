@@ -50,8 +50,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#2c2c2c', // Dunkleres Grau wie Akkordeon-Container
     paddingVertical: 15,
     paddingHorizontal: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+    // ALTE EINSTELLUNG (für Rückgängigmachen): borderTopWidth: 1,
+    // ALTE EINSTELLUNG (für Rückgängigmachen): borderTopColor: 'rgba(255, 255, 255, 0.2)',
+    borderTopWidth: 0, // Entfernt
     marginTop: 'auto', // Footer nach unten schieben
   },
   footerContent: {

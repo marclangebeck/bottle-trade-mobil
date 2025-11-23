@@ -14,7 +14,7 @@ import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
 
-export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [], onCreateSurvey, onDeleteSurvey, onEndSurvey, isLoggedIn = false }) {
+export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [], onCreateSurvey, onDeleteSurvey, onEndSurvey, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
   const [surveyData, setSurveyData] = useState({
@@ -161,7 +161,7 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
         left: 0,
         right: 0,
         zIndex: 1000,
-        borderBottomWidth: 1,
+        borderBottomWidth: 0.5,
         borderBottomColor: 'rgba(255, 255, 255, 0.2)'
       }} />
       
@@ -205,6 +205,13 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
           
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.dashboardContainer}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => onNavigate('admin-dashboard')}
+              >
+                <Text style={styles.backButtonText}>← Zurück zum Admin-Bereich</Text>
+              </TouchableOpacity>
+              
               {isCreatingSurvey ? (
                 <View style={styles.createForm}>
                   <Text style={styles.formTitle}>Neue Umfrage erstellen</Text>
@@ -216,7 +223,7 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
                       value={surveyData.title}
                       onChangeText={(text) => setSurveyData({...surveyData, title: text})}
                       placeholder="z.B. Weinpräferenzen 2024"
-                      placeholderTextColor="#999"
+                      placeholderTextColor="#999999"
                     />
                   </View>
 
@@ -227,7 +234,7 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
                       value={surveyData.question}
                       onChangeText={(text) => setSurveyData({...surveyData, question: text})}
                       placeholder="Welche Weinsorte bevorzugen Sie am meisten?"
-                      placeholderTextColor="#999"
+                      placeholderTextColor="#999999"
                       multiline
                       numberOfLines={3}
                     />
@@ -242,7 +249,7 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
                           value={option}
                           onChangeText={(text) => updateOption(index, text)}
                           placeholder={`Option ${index + 1}`}
-                          placeholderTextColor="#999"
+                          placeholderTextColor="#999999"
                         />
                         {surveyData.options.length > 2 && (
                           <TouchableOpacity 
@@ -268,7 +275,7 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
                       value={surveyData.btpReward.toString()}
                       onChangeText={(text) => setSurveyData({...surveyData, btpReward: parseInt(text) || 0})}
                       placeholder="5"
-                      placeholderTextColor="#999"
+                      placeholderTextColor="#999999"
                       keyboardType="numeric"
                     />
                   </View>
@@ -362,7 +369,12 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
         </View>
         <Footer />
       </View>
-      <BottomNavigation onNavigate={onNavigate} isLoggedIn={isLoggedIn} />
+      <BottomNavigation
+        onNavigate={onNavigate}
+        isLoggedIn={isLoggedIn}
+        unreadNotifications={unreadNotifications}
+        unreadHints={unreadHints}
+      />
     </View>
   );
 }
@@ -370,7 +382,7 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c', // Gleiche Farbe wie StatusBar-Ersatz-View, verhindert weißen Strich
   },
   contentContainer: {
     flex: 1,
@@ -380,16 +392,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 33.75,
-    paddingBottom: 33.75,
-    backgroundColor: '#2f3a3b',
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
     position: 'relative',
     marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 135,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+    minHeight: 90,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
+    // Glassmorphism Effekt
+    shadowColor: '#DAA520',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   hamburgerContainer: {
     flex: 0,
@@ -404,7 +422,7 @@ const styles = StyleSheet.create({
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -418,22 +436,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2c2c2c', // Dunkler Text auf hellem Header
     textAlign: 'center',
   },
   backButton: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
+    backgroundColor: '#D2691E',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
     alignItems: 'center',
+    shadowColor: '#D2691E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   backButtonText: {
-    fontSize: 24,
     color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   createButton: {
     width: 45,
@@ -455,39 +478,55 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   createForm: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 58, 59, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   formTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     marginBottom: 20,
     textAlign: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: '#D2691E',
+    paddingBottom: 8,
   },
   inputGroup: {
     marginBottom: 20,
   },
   label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2f3a3b',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    color: '#FFFFFF',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 10,
+    padding: 14,
+    color: '#333333',
     fontSize: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
   },
   textArea: {
-    height: 80,
+    height: 100,
     textAlignVertical: 'top',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 10,
+    padding: 14,
+    color: '#333333',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
   },
   optionRow: {
     flexDirection: 'row',
@@ -512,17 +551,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   addOptionButton: {
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    borderRadius: 8,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 10,
     padding: 12,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#4CAF50',
+    borderWidth: 1.5,
+    borderColor: '#D2691E',
+    borderStyle: 'dashed',
   },
   addOptionText: {
-    color: '#4CAF50',
+    color: '#D2691E',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   radioGroup: {
     flexDirection: 'row',
@@ -530,20 +570,22 @@ const styles = StyleSheet.create({
   },
   radioOption: {
     padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
     flex: 1,
     marginHorizontal: 5,
     alignItems: 'center',
+    backgroundColor: '#F8F9FA',
   },
   radioSelected: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
+    backgroundColor: '#D2691E',
+    borderColor: '#D2691E',
   },
   radioText: {
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     fontSize: 14,
+    fontWeight: '600',
   },
   radioTextSelected: {
     fontWeight: 'bold',
@@ -555,24 +597,31 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
     padding: 15,
     marginRight: 10,
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
   },
   cancelButtonText: {
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   createSurveyButton: {
     flex: 1,
-    backgroundColor: '#4CAF50',
-    borderRadius: 8,
+    backgroundColor: '#D2691E',
+    borderRadius: 12,
     padding: 15,
     marginLeft: 10,
     alignItems: 'center',
+    shadowColor: '#D2691E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   createSurveyButtonText: {
     color: '#FFFFFF',
@@ -582,16 +631,26 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     marginBottom: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: '#D2691E',
+    paddingBottom: 8,
   },
   surveyCard: {
-    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 15,
     borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
+    borderLeftColor: '#D2691E',
+    borderWidth: 1,
+    borderColor: 'rgba(47, 58, 59, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   surveyHeader: {
     flexDirection: 'row',
@@ -602,7 +661,7 @@ const styles = StyleSheet.create({
   surveyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2f3a3b',
     flex: 1,
   },
   statusBadge: {
@@ -611,7 +670,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   activeBadge: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#D2691E',
   },
   completedBadge: {
     backgroundColor: '#FF9800',
@@ -623,7 +682,7 @@ const styles = StyleSheet.create({
   },
   surveyQuestion: {
     fontSize: 14,
-    color: '#CCCCCC',
+    color: '#333333',
     marginBottom: 15,
   },
   surveyStats: {
@@ -632,15 +691,15 @@ const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 12,
-    color: '#999',
+    color: '#666666',
   },
   surveyActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 15,
     paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopWidth: 0.5,
+    borderTopColor: '#E0E0E0',
   },
   actionButton: {
     flex: 1,
@@ -651,23 +710,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   resultsButton: {
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    borderWidth: 1,
-    borderColor: '#4CAF50',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
+    borderColor: '#D2691E',
   },
   endButton: {
-    backgroundColor: 'rgba(255, 87, 34, 0.2)',
-    borderWidth: 1,
-    borderColor: '#FF5722',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
+    borderColor: '#FF9800',
   },
   deleteButton: {
-    backgroundColor: 'rgba(244, 67, 54, 0.2)',
-    borderWidth: 1,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
     borderColor: '#F44336',
   },
   actionButtonText: {
     fontSize: 12,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontWeight: '600',
+    color: '#2f3a3b',
   },
 });
