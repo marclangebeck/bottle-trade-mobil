@@ -59,6 +59,10 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
   // WICHTIG: Track welche Notifications bereits archiviert wurden (lokal)
   // Dies verhindert, dass archivierte Notifications wieder angezeigt werden, auch wenn die Subscription sie wieder lädt
   const archivedNotificationIdsRef = useRef(new Set());
+  // WICHTIG: Verhindere Endlosschleife - tracke ob useEffect bereits läuft
+  const isCombiningRef = useRef(false);
+  // WICHTIG: Tracke letzte verarbeitete Daten, um unnötige Re-Runs zu vermeiden
+  const lastProcessedDataRef = useRef({ notifications: null, chats: null, userId: null });
 
   // Debug: Log initial notifications
   useEffect(() => {
@@ -268,15 +272,46 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
   // Chats sollten immer angezeigt werden, auch wenn keine Notification existiert
   // ABER: Nur Chats, die wirklich in Firestore existieren
   useEffect(() => {
+    // WICHTIG: Verhindere Endlosschleife - prüfe ob bereits eine Ausführung läuft
+    if (isCombiningRef.current) {
+      console.log('⚠️ InfoBoxScreen: Kombinieren läuft bereits, überspringe erneute Ausführung');
+      return;
+    }
+
+    // WICHTIG: Prüfe ob sich die Daten wirklich geändert haben
+    const notificationsChanged = JSON.stringify(allNotifications.map(n => n.id).sort()) !== 
+                                  JSON.stringify(lastProcessedDataRef.current.notifications?.map(n => n.id).sort() || []);
+    const chatsChanged = JSON.stringify(chats.map(c => c.id).sort()) !== 
+                         JSON.stringify(lastProcessedDataRef.current.chats?.map(c => c.id).sort() || []);
+    const userIdChanged = currentUserId !== lastProcessedDataRef.current.userId;
+
+    if (!notificationsChanged && !chatsChanged && !userIdChanged) {
+      console.log('⚠️ InfoBoxScreen: Daten haben sich nicht geändert, überspringe Kombinieren');
+      return;
+    }
+
     console.log('🔄 InfoBoxScreen: Kombiniere Notifications und Chats', {
       notificationsCount: allNotifications.length,
-      chatsCount: chats.length
+      chatsCount: chats.length,
+      notificationsChanged,
+      chatsChanged,
+      userIdChanged
     });
+
+    // Markiere als laufend
+    isCombiningRef.current = true;
 
     // WICHTIG: Prüfe, welche Chats wirklich in Firestore existieren
     // Erstelle Chat-Entries nur für Chats, die existieren
+    // WICHTIG: Filtere Hinweise (entryType: 'hint') heraus - diese werden nicht als Chat-Entries angezeigt
+    // Hinweise werden separat über Notifications angezeigt
     const chatEntriesPromises = chats
       .filter(chat => {
+        // WICHTIG: Filtere Hinweise heraus - diese haben keine participants und werden nicht als Chat-Entries angezeigt
+        if (chat.entryType === 'hint') {
+          return false; // Hinweise werden nicht als Chat-Entries angezeigt
+        }
+        
         // WICHTIG: Filtere Chats heraus, die vom aktuellen User gelöscht wurden
         // Diese sollten nicht mehr angezeigt werden
         const deletedBy = chat.deletedBy || [];
@@ -320,40 +355,61 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
       
       // Erstelle Chat-Entries aus existierenden Chats
       const chatEntries = existingChats.map(chat => {
-        // Prüfe, ob es bereits eine Notification für diesen Chat gibt
-        const existingNotification = allNotifications.find(n => 
-          n.chatId === chat.id && n.type === 'chat'
-        );
+        try {
+          // Prüfe, ob es bereits eine Notification für diesen Chat gibt
+          const existingNotification = allNotifications.find(n => 
+            n.chatId === chat.id && n.type === 'chat'
+          );
 
-        if (existingNotification) {
-          // Wenn es eine Notification gibt, verwende diese
-          return null; // Wird von Notification abgedeckt
+          if (existingNotification) {
+            // Wenn es eine Notification gibt, verwende diese
+            return null; // Wird von Notification abgedeckt
+          }
+
+          // WICHTIG: Prüfe, ob der Chat von einem anderen User gelöscht wurde
+          // Wenn deletedBy andere User enthält (aber nicht den aktuellen User), ist der Chat "verlassen"
+          const deletedBy = chat.deletedBy || [];
+          const isDeletedByOthers = Array.isArray(deletedBy) && 
+                                    deletedBy.length > 0 && 
+                                    !deletedBy.includes(currentUserId);
+          
+          // WICHTIG: Stelle sicher, dass participants existiert und ein Array ist
+          const participants = chat.participants || [];
+          if (!Array.isArray(participants) || participants.length === 0) {
+            console.warn('⚠️ InfoBoxScreen: Chat hat keine participants oder participants ist kein Array:', {
+              chatId: chat.id,
+              participants: chat.participants,
+              entryType: chat.entryType
+            });
+            return null; // Überspringe diesen Chat, da er keine gültigen participants hat
+          }
+          
+          const otherParticipantId = participants.find(pid => pid !== currentUserId);
+          const otherParticipantIndex = participants.findIndex(pid => pid !== currentUserId);
+          const otherParticipantName = chat.participantNames?.[otherParticipantIndex] || 'Unbekannt';
+
+          return {
+            id: `chat-${chat.id}`,
+            type: 'chat',
+            chatId: chat.id,
+            title: isDeletedByOthers ? `${otherParticipantName} hat den Chat verlassen` : otherParticipantName,
+            message: isDeletedByOthers ? 'Der andere Teilnehmer hat den Chat verlassen' : (chat.lastMessage || 'Keine Nachrichten'),
+            createdAt: chat.updatedAt || chat.createdAt || new Date(),
+            isRead: true, // Chat ohne Notification ist gelesen
+            isCompleted: false,
+            isArchived: false,
+            isChatEntry: true, // Marker, dass dies ein Chat-Entry ist (keine echte Notification)
+            isChatLeft: isDeletedByOthers, // Marker, dass der Chat verlassen wurde
+            chat: chat // Vollständiges Chat-Objekt für Navigation
+          };
+        } catch (error) {
+          console.error('❌ InfoBoxScreen: Fehler beim Erstellen des Chat-Entries:', {
+            chatId: chat?.id,
+            error: error.message,
+            chat: chat
+          });
+          return null; // Überspringe diesen Chat bei Fehler
         }
-
-        // WICHTIG: Prüfe, ob der Chat von einem anderen User gelöscht wurde
-        // Wenn deletedBy andere User enthält (aber nicht den aktuellen User), ist der Chat "verlassen"
-        const deletedBy = chat.deletedBy || [];
-        const isDeletedByOthers = Array.isArray(deletedBy) && 
-                                  deletedBy.length > 0 && 
-                                  !deletedBy.includes(currentUserId);
-        const otherParticipantId = chat.participants.find(pid => pid !== currentUserId);
-        const otherParticipantIndex = chat.participants.findIndex(pid => pid !== currentUserId);
-        const otherParticipantName = chat.participantNames?.[otherParticipantIndex] || 'Unbekannt';
-
-        return {
-          id: `chat-${chat.id}`,
-          type: 'chat',
-          chatId: chat.id,
-          title: isDeletedByOthers ? `${otherParticipantName} hat den Chat verlassen` : otherParticipantName,
-          message: isDeletedByOthers ? 'Der andere Teilnehmer hat den Chat verlassen' : (chat.lastMessage || 'Keine Nachrichten'),
-          createdAt: chat.updatedAt || chat.createdAt || new Date(),
-          isRead: true, // Chat ohne Notification ist gelesen
-          isCompleted: false,
-          isArchived: false,
-          isChatEntry: true, // Marker, dass dies ein Chat-Entry ist (keine echte Notification)
-          isChatLeft: isDeletedByOthers, // Marker, dass der Chat verlassen wurde
-          chat: chat // Vollständiges Chat-Objekt für Navigation
-        };
       })
       .filter(entry => entry !== null); // Entferne null-Entries (werden von Notifications abgedeckt)
 
@@ -389,7 +445,17 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
         }
       });
 
+      // WICHTIG: Aktualisiere letzte verarbeitete Daten
+      lastProcessedDataRef.current = {
+        notifications: allNotifications.map(n => ({ id: n.id })),
+        chats: chats.map(c => ({ id: c.id })),
+        userId: currentUserId
+      };
+      
       setCombinedEntries(combined);
+      
+      // WICHTIG: Markiere als abgeschlossen
+      isCombiningRef.current = false;
     }).catch(error => {
       console.error('❌ InfoBoxScreen: Fehler beim Validieren der Chats:', error);
       // Bei Fehler: Zeige nur Notifications, keine Chat-Entries
@@ -399,7 +465,18 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return dateB.getTime() - dateA.getTime();
       });
+      
+      // WICHTIG: Aktualisiere letzte verarbeitete Daten auch bei Fehler
+      lastProcessedDataRef.current = {
+        notifications: allNotifications.map(n => ({ id: n.id })),
+        chats: chats.map(c => ({ id: c.id })),
+        userId: currentUserId
+      };
+      
       setCombinedEntries(combined);
+      
+      // WICHTIG: Markiere als abgeschlossen auch bei Fehler
+      isCombiningRef.current = false;
     });
     }, [allNotifications, chats, currentUserId]);
 

@@ -1,8 +1,8 @@
 # Bottle-Trade Mobile App - Projekt Dokumentation
 
-**Stand:** 19. November 2025  
-**Version:** 1.3  
-**Letzte Aktualisierung:** InfoBoxScreen Chat-Integration (WhatsApp-ähnlich), Chat-Löschung mit "Chat verlassen" Status
+**Stand:** 24. November 2025  
+**Version:** 1.4  
+**Letzte Aktualisierung:** Chat- und Hinweis-Persistenz-Fixes, Badge-Berechnung erweitert, System-Nachricht beim Chat-Erstellen
 
 ---
 
@@ -614,9 +614,119 @@ export const findAnyChatNotification = async (userId, chatId)
 
 #### Bekannte Probleme / To-Do
 
-- Chat muss 2x geswiped werden, um gelöscht zu werden (sollte nur 1x sein)
-- Wenn einer den Chat löscht, soll beim anderen "Chat verlassen" angezeigt werden
-- "Chat verlassen" Einträge sollen im ersten Versuch gelöscht werden können
+- ✅ Chat muss 2x geswiped werden, um gelöscht zu werden (sollte nur 1x sein) - **BEHOBEN**
+- ✅ Wenn einer den Chat löscht, soll beim anderen "Chat verlassen" angezeigt werden - **IMPLEMENTIERT**
+- ✅ "Chat verlassen" Einträge sollen im ersten Versuch gelöscht werden können - **IMPLEMENTIERT**
+
+---
+
+## 🚧 Chat- und Hinweis-Persistenz-Fixes (24. November 2025)
+
+**Status:** Implementiert und getestet  
+**Backup:** `Backup_20251124_204745.tar.gz` (160 MB)  
+**Datum:** 24. November 2025, 20:47 Uhr
+
+### Behobene Probleme
+
+#### 1. Chat verschwindet nach dem Senden einer Nachricht
+**Problem:** Chat verschwand aus der Chatliste, nachdem eine Nachricht gesendet wurde, obwohl er existieren sollte.
+
+**Ursachen:**
+- `updateChat` Funktion entfernte kritische Felder (`entryType`, `participants`) beim Update
+- `InfoBoxScreen` erhielt keine `chats` Prop von `App.js`
+- Filterlogik filterte Chats heraus, wenn kritische Felder fehlten
+
+**Lösung:**
+- `updateChat` in `database-web.js` angepasst: Behält jetzt explizit `entryType`, `participants` und `type` beim Update
+- `chats={chats}` Prop zu `InfoBoxScreen` in `App.js` hinzugefügt
+- Validierungslogik in `InfoBoxScreen.js` verbessert: Prüft, ob `participants` existiert, bevor `.find()` aufgerufen wird
+- Code: `database-web.js` Zeilen ~1758-1803, `App.js` Zeile ~4551, `InfoBoxScreen.js` Zeilen ~376-385
+
+#### 2. Hinweise verschwinden nach dem Senden einer Nachricht
+**Problem:** Hinweis-Notifications (`hint-decision`, `hint-small`) verschwanden, nachdem eine Nachricht im Chat gesendet wurde.
+
+**Ursachen:**
+- `markChatAsRead` löschte alle Notifications mit `chatId`, unabhängig vom Typ
+- `deleteNotificationsForChat` löschte alle Notifications mit `chatId`, auch Hinweis-Notifications
+
+**Lösung:**
+- `markChatAsRead` in `App.js` angepasst: Löscht nur Chat-Notifications (`type === 'chat'`), nicht Hinweis-Notifications
+- `deleteNotificationsForChat` in `database-web.js` angepasst: Filtert jetzt nach `type === 'chat'` in der Query
+- Code: `App.js` Zeilen ~2067-2097, `database-web.js` Zeilen ~2857-2863
+
+#### 3. System-Nachricht beim Chat-Erstellen
+**Feature:** Beim Erstellen eines neuen Chats nach Akzeptierung eines Tausches wird automatisch eine System-Nachricht hinzugefügt.
+
+**Implementierung:**
+- System-Nachricht beschreibt den Tausch: "Dies ist der Chat zum Tausch zwischen [User1] und [User2] mit den Weinen "[Wein1]" von [User1] und "[Wein2]" von [User2]."
+- Nachricht wird mit `senderId: 'system'` und `isSystemMessage: true` markiert
+- Code: `App.js` Zeilen ~4045-4062
+
+#### 4. Hinweis-Notifications werden nach Akzeptierung gelöscht
+**Feature:** Alle Hinweis-Notifications für einen Tausch werden automatisch gelöscht, nachdem der Chat erstellt wurde.
+
+**Implementierung:**
+- `fsDeleteNotificationsForTradeRequest` wird für beide User aufgerufen, um alle Hinweis-Notifications zu löschen
+- Lokaler State wird sofort aktualisiert, damit Hinweise sofort verschwinden
+- Funktioniert sowohl für neue als auch für bestehende Chats
+- Code: `App.js` Zeilen ~4064-4095
+
+### Badge-Berechnung Erweiterungen
+
+#### 5. Badge zählt jetzt auch ungelesene Chats
+**Feature:** Das Badge zählt nicht nur ungelesene Notifications, sondern auch ungelesene Chats.
+
+**Implementierung:**
+- Ein Chat gilt als ungelesen, wenn:
+  - `unreadCount > 0` ODER
+  - User nicht in `readBy` ist UND keine Notification für diesen Chat existiert
+- Duplikate werden vermieden: Wenn ein Chat eine Notification hat, zählt nur die Notification
+- Code: `App.js` Zeilen ~2449-2479
+
+#### 6. Badge unterscheidet zwischen eigenen und fremden Nachrichten
+**Feature:** Das Badge wird nicht erhöht, wenn die letzte Nachricht von mir selbst stammt.
+
+**Implementierung:**
+- Chat-Notifications werden herausgefiltert, wenn `senderId` oder `fromUserId` gleich `currentId` ist
+- Ungelesene Chats werden herausgefiltert, wenn `lastMessageSenderId` gleich `currentId` ist
+- Prüfung auch in `messages[chat.id]` für die letzte Nachricht
+- Code: `App.js` Zeilen ~2429-2446, ~2462-2474
+
+#### 7. Badge für "Chat verlassen" Notifications
+**Feature:** Wenn ein Chat-Partner den Chat löscht/verlässt, bekommt der andere Partner eine Notification und ein Badge.
+
+**Implementierung:**
+- Notification wird mit `type: 'hint-small'` erstellt
+- Enthält `fromUserId` (derjenige, der den Chat verlassen hat) und `toUserId` (derjenige, der die Notification bekommt)
+- Derjenige, der den Chat verlassen hat, bekommt keine Notification
+- Code: `App.js` Zeilen ~2247-2260
+
+### Technische Details
+
+**Geänderte Funktionen:**
+1. **`updateChat` (database-web.js):**
+   - Behält jetzt explizit `entryType`, `participants` und `type` beim Update
+   - Verwendet `...existingData` als Basis, dann `...updates` für neue Werte
+   - Stellt sicher, dass kritische Felder nie verloren gehen
+
+2. **`refreshNotificationBadges` (App.js):**
+   - Zählt jetzt auch ungelesene Chats
+   - Filtert eigene Nachrichten heraus
+   - Berücksichtigt `messages` State für aktuelle Nachrichten
+
+3. **`deleteNotificationsForChat` (database-web.js):**
+   - Filtert jetzt nach `type === 'chat'` in der Query
+   - Löscht keine Hinweis-Notifications mehr
+
+4. **`markChatAsRead` (App.js):**
+   - Löscht nur Chat-Notifications, nicht Hinweis-Notifications
+   - Behält Hinweis-Notifications für manuelle Löschung
+
+**Neue Features:**
+- System-Nachricht beim Chat-Erstellen
+- Automatisches Löschen von Hinweis-Notifications nach Akzeptierung
+- Badge-Berechnung für ungelesene Chats
+- Badge-Berechnung unterscheidet eigene/fremde Nachrichten
 
 ---
 
@@ -696,6 +806,21 @@ export const findAnyChatNotification = async (userId, chatId)
 - Dashboard-Kacheln mit linearem Verlauf (`#f1e9dd → #e6dccf`) modernisiert
 - Backup erstellt: `Backup_20251109_193012.tar.gz`
 
+### 24. November 2025 - Chat- und Hinweis-Persistenz-Fixes, Badge-Berechnung erweitert
+- ✅ Chat verschwindet nicht mehr nach dem Senden einer Nachricht
+- ✅ Hinweise bleiben bestehen, bis sie manuell gelöscht werden
+- ✅ System-Nachricht beim Chat-Erstellen hinzugefügt (beschreibt den Tausch)
+- ✅ Alle Hinweis-Notifications werden nach Akzeptierung des Tausches automatisch gelöscht
+- ✅ Badge-Berechnung erweitert: zählt jetzt auch ungelesene Chats
+- ✅ Badge unterscheidet zwischen eigenen und fremden Nachrichten (eigene Nachrichten erhöhen Badge nicht)
+- ✅ Badge für "Chat verlassen" Notifications implementiert
+- ✅ `updateChat` Funktion verbessert: behält kritische Felder (`entryType`, `participants`) beim Update
+- ✅ `InfoBoxScreen` erhält jetzt `chats` Prop von `App.js`
+- ✅ Validierungslogik in `InfoBoxScreen` verbessert: prüft `participants` vor `.find()` Aufruf
+- ✅ `deleteNotificationsForChat` filtert jetzt nur Chat-Notifications, nicht Hinweis-Notifications
+- ✅ `markChatAsRead` löscht nur Chat-Notifications, nicht Hinweis-Notifications
+- Backup erstellt: `Backup_20251124_204745.tar.gz` (160 MB)
+
 ---
 
 **Hinweis für neue Agents:**  
@@ -705,18 +830,22 @@ Diese Dokumentation sollte bei größeren Änderungen aktualisiert werden. Insbe
 - Bug-Fixes eintragen
 - Neue Features beschreiben
 
-**Aktualisiert am:** 19. November 2025, 22:19 Uhr
+**Aktualisiert am:** 24. November 2025, 20:48 Uhr
 
 ---
 
 ## 🔄 Backup-Informationen
 
 **Letztes Backup:**
-- **Datei:** `backup_20251119_221712.tar.gz`
-- **Größe:** 2.97 GB
-- **Datum:** 19. November 2025, 22:17:12
+- **Datei:** `Backup_20251124_204745.tar.gz`
+- **Größe:** 160 MB
+- **Datum:** 24. November 2025, 20:47:45
 - **Speicherort:** `/home/bottleadmin/bottle-trade-mobile/`
-- **Inhalt:** Vollständiger Projektstand nach Notification-Duplikat-Fixes und Chat-Persistenz-Fixes
+- **Inhalt:** Vollständiger Projektstand nach Chat- und Hinweis-Persistenz-Fixes, Badge-Berechnung erweitert, System-Nachricht beim Chat-Erstellen
+
+**Vorherige Backups:**
+- `backup_20251119_221712.tar.gz` (2.97 GB) - 19. November 2025
+- `backup_20251119_224443.tar.gz` (2.97 GB) - 19. November 2025
 
 ---
 

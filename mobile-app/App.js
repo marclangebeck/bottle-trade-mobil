@@ -2064,14 +2064,15 @@ useEffect(() => {
         
         // WICHTIG: Markiere Notifications als "wird gelöscht", bevor wir sie aus dem State entfernen
         // Dies verhindert, dass die Firestore-Subscription sie wieder hinzufügt
+        // WICHTIG: Lösche NUR Chat-Notifications, NICHT Hinweis-Notifications (hint-decision, hint-small)
+        // Hinweise sollen bleiben, bis der User sie manuell löscht
         const notificationsToDelete = (notifications || []).filter(n => {
-          // Entferne Notifications für diesen Chat
-          if (n.chatId === chatId) return true;
-          // Entferne Trade-Request Notifications für diesen Chat (wenn vorhanden)
-          if (tradeRequestId && n.requestId === tradeRequestId && 
-              (n.type === 'hint-decision' || n.type === 'chat' || n.type === 'hint-small')) {
+          // Entferne nur Chat-Notifications für diesen Chat
+          if (n.chatId === chatId && n.type === 'chat') {
             return true;
           }
+          // WICHTIG: Lösche KEINE Hinweis-Notifications (hint-decision, hint-small)
+          // Diese sollen bleiben, bis der User sie manuell löscht
           return false;
         });
         
@@ -2084,15 +2085,15 @@ useEffect(() => {
         
         // WICHTIG: Aktualisiere lokalen State SOFORT, bevor Firestore-Operation
         // Dies stellt sicher, dass die Zählung sofort aktualisiert wird
+        // WICHTIG: Lösche NUR Chat-Notifications, NICHT Hinweis-Notifications
         setNotifications(prev => {
           const filtered = prev.filter(n => {
-            // Entferne Notifications für diesen Chat
-            if (n.chatId === chatId) return false;
-            // Entferne Trade-Request Notifications für diesen Chat (wenn vorhanden)
-            if (tradeRequestId && n.requestId === tradeRequestId && 
-                (n.type === 'hint-decision' || n.type === 'chat' || n.type === 'hint-small')) {
+            // Entferne nur Chat-Notifications für diesen Chat
+            if (n.chatId === chatId && n.type === 'chat') {
               return false;
             }
+            // WICHTIG: Behalte Hinweis-Notifications (hint-decision, hint-small)
+            // Diese sollen bleiben, bis der User sie manuell löscht
             return true;
           });
           console.log(`🔧 Lokaler State aktualisiert: ${prev.length} -> ${filtered.length} Notifications (chatId: ${chatId})`);
@@ -2244,16 +2245,22 @@ useEffect(() => {
             console.log('✅ PHASE3: Chat-verlassen-Hinweis erstellt für:', otherParticipantId);
             
             // PHASE3: Erstelle Notification für den Hinweis
+            // WICHTIG: Diese Notification ist für den anderen Partner (der den Chat nicht verlassen hat)
+            // Derjenige, der den Chat verlassen hat (currentUserId), bekommt KEINE Notification
             const notificationData = {
               type: 'hint-small',
               title: 'Chat verlassen',
               message: `${currentUserName} hat den Chat verlassen`,
               priority: 'medium',
-              chatId: chatId
+              chatId: chatId,
+              fromUserId: currentUserId, // Derjenige, der den Chat verlassen hat
+              fromUserName: currentUserName,
+              toUserId: otherParticipantId, // Derjenige, der den Chat nicht verlassen hat (bekommt die Notification)
+              toUserName: otherParticipantName
             };
             
             await fsCreateNotification(otherParticipantId, notificationData);
-            console.log('✅ PHASE3: Chat-verlassen-Notification erstellt für:', otherParticipantId);
+            console.log('✅ PHASE3: Chat-verlassen-Notification erstellt für:', otherParticipantId, '(von:', currentUserId, ')');
         logNotificationEvent({
           stage: 'chat/delete/notification',
           type: 'chat',
@@ -2414,10 +2421,10 @@ useEffect(() => {
     }
     
     const allNotifications = notifications || [];
+    const allChats = chats || [];
     
-    // Einfache Berechnung: Alle ungelesenen, nicht-archivierten Notifications zählen
-    // Unterstützte Typen: 'hint-decision', 'hint-small', 'chat', 'system'
-    const unreadCount = allNotifications.filter(n => {
+    // Zähle ungelesene Notifications
+    const unreadNotifications = allNotifications.filter(n => {
       if (!n || n.isRead) return false;
       if (n.isArchived) return false;
       
@@ -2426,12 +2433,15 @@ useEffect(() => {
       if (!supportedTypes.includes(n.type)) return false;
       
       // Filtere Notifications von eigenen Nachrichten (nur für Chat-Typen)
+      // WICHTIG: Eine Chat-Notification ist von meiner eigenen Nachricht, wenn:
+      // - senderId oder fromUserId gleich currentId ist (ich habe die Nachricht gesendet)
+      // - UND toUserId nicht existiert oder toUserId gleich currentId ist (Notification ist für mich, nicht für einen anderen)
       if (n.type === 'chat') {
         const isOwnMessage = 
-          n.senderId === currentId || 
-          n.fromUserId === currentId ||
-          (n.data && n.data.senderId === currentId) ||
-          (n.data && n.data.fromUserId === currentId);
+          (n.senderId === currentId || n.fromUserId === currentId ||
+           (n.data && n.data.senderId === currentId) ||
+           (n.data && n.data.fromUserId === currentId)) &&
+          (!n.toUserId || n.toUserId === currentId); // Nur wenn toUserId nicht existiert oder für mich ist
         if (isOwnMessage) return false;
       }
       
@@ -2443,7 +2453,59 @@ useEffect(() => {
       }
       
       return true;
-    }).length;
+    });
+    
+    // Zähle ungelesene Chats (Chats mit unreadCount > 0 oder nicht in readBy)
+    const unreadChats = allChats.filter(chat => {
+      // Nur echte Chats, keine Hinweise
+      if (chat.entryType !== 'chat' && chat.entryType !== undefined) return false;
+      
+      // Prüfe, ob Chat gelöscht wurde
+      if (chat.deletedBy && Array.isArray(chat.deletedBy) && chat.deletedBy.includes(currentId)) return false;
+      if (chat.deleted === true) return false;
+      
+      // Prüfe, ob Chat aktuell geöffnet ist
+      const routeChatId = route?.params?.chat?.id;
+      if (currentScreen === 'chat-room' && routeChatId === chat.id) return false;
+      
+      // WICHTIG: Prüfe, ob die letzte Nachricht von mir ist
+      // Wenn die letzte Nachricht von mir ist, ist der Chat für mich nicht ungelesen
+      const lastMessageSenderId = chat.lastMessageSenderId;
+      if (lastMessageSenderId === currentId) {
+        // Die letzte Nachricht ist von mir - Chat ist für mich nicht ungelesen
+        return false;
+      }
+      
+      // Prüfe auch in den Nachrichten, ob die letzte Nachricht von mir ist
+      const chatMessages = messages[chat.id];
+      if (chatMessages && Array.isArray(chatMessages) && chatMessages.length > 0) {
+        const lastMessage = chatMessages[chatMessages.length - 1];
+        if (lastMessage && lastMessage.senderId === currentId) {
+          // Die letzte Nachricht ist von mir - Chat ist für mich nicht ungelesen
+          return false;
+        }
+      }
+      
+      // Prüfe, ob Chat ungelesene Nachrichten hat
+      // Ein Chat ist ungelesen, wenn:
+      // 1. unreadCount > 0 ODER
+      // 2. readBy existiert und currentId nicht in readBy ist ODER
+      // 3. Es gibt keine Notification für diesen Chat (dann zählt der Chat selbst)
+      const hasUnreadCount = chat.unreadCount && chat.unreadCount > 0;
+      const isNotInReadBy = chat.readBy && Array.isArray(chat.readBy) && !chat.readBy.includes(currentId);
+      const hasNoNotification = !unreadNotifications.some(n => n.chatId === chat.id && n.type === 'chat');
+      
+      // Ein Chat zählt als ungelesen, wenn er unreadCount > 0 hat ODER wenn er nicht in readBy ist UND keine Notification existiert
+      // (wenn eine Notification existiert, wird sie bereits gezählt)
+      return (hasUnreadCount || (isNotInReadBy && hasNoNotification));
+    });
+    
+    // Kombiniere ungelesene Notifications und ungelesene Chats (ohne Duplikate)
+    // Wenn ein Chat eine Notification hat, zählt nur die Notification
+    const notificationChatIds = new Set(unreadNotifications.filter(n => n.chatId).map(n => n.chatId));
+    const unreadChatsWithoutNotifications = unreadChats.filter(chat => !notificationChatIds.has(chat.id));
+    
+    const unreadCount = unreadNotifications.length + unreadChatsWithoutNotifications.length;
 
     logNotificationEvent({
       stage: 'badge-refresh/done',
@@ -2451,6 +2513,9 @@ useEffect(() => {
       data: {
         unreadCount,
         totalNotifications: allNotifications.length,
+        unreadNotifications: unreadNotifications.length,
+        unreadChats: unreadChatsWithoutNotifications.length,
+        totalChats: allChats.length,
       },
     });
 
@@ -2468,7 +2533,7 @@ useEffect(() => {
       }
       return prev;
     });
-  }, [notifications, isLoggedIn, currentScreen, route]);
+  }, [notifications, chats, messages, isLoggedIn, currentScreen, route]);
 
   const updateNotificationReadStatus = (notificationId, isRead) => {
     setNotifications(prev => {
@@ -4021,6 +4086,31 @@ useEffect(() => {
       if (existingChat) {
         // Chat existiert bereits - verwende ihn
         chat = existingChat;
+        
+        // PHASE3: Lösche auch für bestehende Chats alle Hinweis-Notifications für diesen Tausch
+        try {
+          const deletePromises = [
+            fsDeleteNotificationsForTradeRequest(actualOtherUserId, tradeRequestId),
+            fsDeleteNotificationsForTradeRequest(currentUserId, tradeRequestId)
+          ];
+          
+          const deletedCounts = await Promise.all(deletePromises);
+          const totalDeleted = deletedCounts[0] + deletedCounts[1];
+          console.log(`✅ PHASE3: ${totalDeleted} Hinweis-Notifications für bestehenden Tausch gelöscht (User A: ${deletedCounts[0]}, User B: ${deletedCounts[1]})`);
+          
+          // WICHTIG: Aktualisiere auch lokalen State
+          setNotifications(prev => {
+            const filtered = prev.filter(n => {
+              if (n.requestId === tradeRequestId && (n.type === 'hint-decision' || n.type === 'hint-small')) {
+                return false;
+              }
+              return true;
+            });
+            return filtered;
+          });
+        } catch (deleteError) {
+          console.error('❌ PHASE3: Fehler beim Löschen der Hinweis-Notifications für bestehenden Chat:', deleteError);
+        }
       } else {
         // PHASE3: Erstelle neuen Chat in Firestore (nur nach Akzeptierung!)
         const chatData = {
@@ -4042,11 +4132,62 @@ useEffect(() => {
         chat = { id: chatId, ...chatData };
         console.log('✅ PHASE3: Neuer Chat erstellt in Firestore nach Akzeptierung:', chatId);
         
+        // PHASE3: Erstelle System-Nachricht, die den Tausch beschreibt
+        const currentUserName = currentUser?.username || `${currentUser?.firstName} ${currentUser?.lastName}` || 'Unbekannt';
+        const wineFromA = tradeRequest.wineTitle || 'Unbekannter Wein'; // Wein von A (fromUser)
+        const wineFromB = selectedWine.name || 'Unbekannter Wein'; // Wein von B (currentUser)
+        
+        const systemMessageText = `Dies ist der Chat zum Tausch zwischen ${otherUserName} und ${currentUserName} mit den Weinen "${wineFromA}" von ${otherUserName} und "${wineFromB}" von ${currentUserName}.`;
+        
+        try {
+          const systemMessageData = {
+            text: systemMessageText,
+            senderId: 'system',
+            senderName: 'System',
+            timestamp: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
+            isSystemMessage: true
+          };
+          
+          await fsAddChatMessage(chatId, systemMessageData);
+          console.log('✅ PHASE3: System-Nachricht zum Tausch hinzugefügt:', systemMessageText);
+        } catch (systemMessageError) {
+          console.error('❌ PHASE3: Fehler beim Hinzufügen der System-Nachricht:', systemMessageError);
+          // Weiterlaufen - Chat wurde erstellt, auch wenn System-Nachricht fehlgeschlagen ist
+        }
+        
+        // PHASE3: Lösche alle Hinweis-Notifications für diesen Tausch für beide User
+        try {
+          const deletePromises = [
+            fsDeleteNotificationsForTradeRequest(actualOtherUserId, tradeRequestId),
+            fsDeleteNotificationsForTradeRequest(currentUserId, tradeRequestId)
+          ];
+          
+          const deletedCounts = await Promise.all(deletePromises);
+          const totalDeleted = deletedCounts[0] + deletedCounts[1];
+          console.log(`✅ PHASE3: ${totalDeleted} Hinweis-Notifications für Tausch gelöscht (User A: ${deletedCounts[0]}, User B: ${deletedCounts[1]})`);
+          
+          // WICHTIG: Aktualisiere auch lokalen State, um Hinweis-Notifications sofort zu entfernen
+          setNotifications(prev => {
+            const filtered = prev.filter(n => {
+              // Entferne nur Hinweis-Notifications für diesen Tausch
+              if (n.requestId === tradeRequestId && (n.type === 'hint-decision' || n.type === 'hint-small')) {
+                return false;
+              }
+              return true;
+            });
+            console.log(`🔧 Lokaler State aktualisiert: ${prev.length} -> ${filtered.length} Notifications (tradeRequestId: ${tradeRequestId})`);
+            return filtered;
+          });
+        } catch (deleteError) {
+          console.error('❌ PHASE3: Fehler beim Löschen der Hinweis-Notifications:', deleteError);
+          // Weiterlaufen - Chat wurde erstellt, auch wenn Löschung fehlgeschlagen ist
+        }
+        
         // PHASE3: Erstelle Notifications für beide User
         const notificationDataForA = {
           type: 'chat',
           title: 'Neuer Chat erstellt',
-          message: `Chat mit ${currentUser?.username || `${currentUser?.firstName} ${currentUser?.lastName}` || 'Unbekannt'} gestartet - Tauschvorschlag: ${selectedWine.name}`,
+          message: `Chat mit ${currentUserName} gestartet - Tauschvorschlag: ${selectedWine.name}`,
           priority: 'high',
           requestId: tradeRequestId,
           chatId: chatId
@@ -4546,6 +4687,7 @@ useEffect(() => {
                  onNavigate={handleNavigate}
                  onLogout={handleLogout}
                  notifications={notifications}
+                 chats={chats}
                  currentUserId={currentUserId}
                  isLoggedIn={isLoggedIn}
                  unreadCount={unreadCount}

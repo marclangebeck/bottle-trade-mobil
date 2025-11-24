@@ -1553,9 +1553,20 @@ export const getChatsForUser = async (userId) => {
     
     // Filtere client-seitig: Nur Einträge, die für diesen User bestimmt sind
     const chats = allEntries.filter(entry => {
+      // DEBUG: Logge jeden Eintrag, der gefiltert wird
+      const debugInfo = {
+        id: entry.id,
+        entryType: entry.entryType,
+        participants: entry.participants,
+        userId: entry.userId,
+        deleted: entry.deleted,
+        deletedBy: entry.deletedBy
+      };
+      
       // WICHTIG: Filtere gelöschte Chats heraus (deleted === true oder deletedBy existiert)
       // Wenn deletedBy gesetzt ist, wurde der Chat gelöscht und sollte für ALLE Teilnehmer ausgeblendet werden
       if (entry.deleted === true) {
+        console.log('🔍 DEBUG getChatsForUser: Chat herausgefiltert (deleted=true):', debugInfo);
         return false; // Chat wurde gelöscht
       }
       // WICHTIG: Filtere nur Chats heraus, die vom aktuellen User gelöscht wurden
@@ -1564,26 +1575,52 @@ export const getChatsForUser = async (userId) => {
         if (Array.isArray(entry.deletedBy)) {
           // Nur herausfiltern, wenn der aktuelle User den Chat gelöscht hat
           if (entry.deletedBy.includes(userId)) {
+            console.log('🔍 DEBUG getChatsForUser: Chat herausgefiltert (deletedBy includes userId):', debugInfo);
             return false; // Chat wurde vom aktuellen User gelöscht
           }
           // WICHTIG: Wenn andere User den Chat gelöscht haben, NICHT herausfiltern
           // Der Chat soll noch angezeigt werden, damit der User sieht, dass der andere Teilnehmer den Chat verlassen hat
         } else {
           // Wenn deletedBy existiert aber kein Array ist, auch ausblenden (alte Datenstruktur)
+          console.log('🔍 DEBUG getChatsForUser: Chat herausgefiltert (deletedBy ist kein Array):', debugInfo);
           return false;
         }
       }
       
       // Für Chats (entryType: 'chat' oder undefined für Rückwärtskompatibilität): Nur wenn userId in participants ist
       if (entry.entryType === 'chat' || !entry.entryType) {
-        return entry.participants && Array.isArray(entry.participants) && entry.participants.includes(userId);
+        const hasParticipants = entry.participants && Array.isArray(entry.participants);
+        const includesUserId = hasParticipants && entry.participants.includes(userId);
+        if (!includesUserId) {
+          console.log('🔍 DEBUG getChatsForUser: Chat herausgefiltert (entryType=chat, aber userId nicht in participants):', {
+            ...debugInfo,
+            hasParticipants,
+            includesUserId,
+            participantsArray: entry.participants
+          });
+        }
+        return includesUserId;
       }
       // Für Hinweise (entryType: 'hint'): Nur wenn userId === entry.userId
       if (entry.entryType === 'hint') {
-        return entry.userId === userId;
+        const matches = entry.userId === userId;
+        if (!matches) {
+          console.log('🔍 DEBUG getChatsForUser: Hint herausgefiltert (entryType=hint, aber userId stimmt nicht):', debugInfo);
+        }
+        return matches;
       }
       // Fallback: Für alte Einträge ohne entryType, prüfe participants
-      return entry.participants && Array.isArray(entry.participants) && entry.participants.includes(userId);
+      const hasParticipants = entry.participants && Array.isArray(entry.participants);
+      const includesUserId = hasParticipants && entry.participants.includes(userId);
+      if (!includesUserId) {
+        console.log('🔍 DEBUG getChatsForUser: Chat herausgefiltert (Fallback, userId nicht in participants):', {
+          ...debugInfo,
+          hasParticipants,
+          includesUserId,
+          participantsArray: entry.participants
+        });
+      }
+      return includesUserId;
     });
     
     // Sortiere client-seitig nach updatedAt (neueste zuerst)
@@ -1644,12 +1681,24 @@ export const subscribeChatsForUser = (userId, callback) => {
       
       // Filtere client-seitig: Nur Einträge, die für diesen User bestimmt sind
       const chats = allEntries.filter(entry => {
+        // DEBUG: Logge jeden Eintrag, der gefiltert wird
+        const debugInfo = {
+          id: entry.id,
+          entryType: entry.entryType,
+          participants: entry.participants,
+          userId: entry.userId,
+          deleted: entry.deleted,
+          deletedBy: entry.deletedBy
+        };
+        
         // WICHTIG: Filtere nur Chats heraus, die vom aktuellen User gelöscht wurden
         // Chats, die von anderen Usern gelöscht wurden, sollen noch angezeigt werden (mit "Chat verlassen" Status)
         if (entry.deleted === true) {
+          console.log('🔍 DEBUG subscribeChatsForUser: Chat herausgefiltert (deleted=true):', debugInfo);
           return false; // Chat wurde komplett gelöscht
         }
         if (entry.deletedBy && Array.isArray(entry.deletedBy) && entry.deletedBy.includes(userId)) {
+          console.log('🔍 DEBUG subscribeChatsForUser: Chat herausgefiltert (deletedBy includes userId):', debugInfo);
           return false; // Chat wurde vom aktuellen User gelöscht
         }
         // WICHTIG: Wenn andere User den Chat gelöscht haben, NICHT herausfiltern
@@ -1657,14 +1706,38 @@ export const subscribeChatsForUser = (userId, callback) => {
         
         // Für Chats (entryType: 'chat' oder undefined für Rückwärtskompatibilität): Nur wenn userId in participants ist
         if (entry.entryType === 'chat' || !entry.entryType) {
-          return entry.participants && Array.isArray(entry.participants) && entry.participants.includes(userId);
+          const hasParticipants = entry.participants && Array.isArray(entry.participants);
+          const includesUserId = hasParticipants && entry.participants.includes(userId);
+          if (!includesUserId) {
+            console.log('🔍 DEBUG subscribeChatsForUser: Chat herausgefiltert (entryType=chat, aber userId nicht in participants):', {
+              ...debugInfo,
+              hasParticipants,
+              includesUserId,
+              participantsArray: entry.participants
+            });
+          }
+          return includesUserId;
         }
         // Für Hinweise (entryType: 'hint'): Nur wenn userId === entry.userId
         if (entry.entryType === 'hint') {
-          return entry.userId === userId;
+          const matches = entry.userId === userId;
+          if (!matches) {
+            console.log('🔍 DEBUG subscribeChatsForUser: Hint herausgefiltert (entryType=hint, aber userId stimmt nicht):', debugInfo);
+          }
+          return matches;
         }
         // Fallback: Für alte Einträge ohne entryType, prüfe participants
-        return entry.participants && Array.isArray(entry.participants) && entry.participants.includes(userId);
+        const hasParticipants = entry.participants && Array.isArray(entry.participants);
+        const includesUserId = hasParticipants && entry.participants.includes(userId);
+        if (!includesUserId) {
+          console.log('🔍 DEBUG subscribeChatsForUser: Chat herausgefiltert (Fallback, userId nicht in participants):', {
+            ...debugInfo,
+            hasParticipants,
+            includesUserId,
+            participantsArray: entry.participants
+          });
+        }
+        return includesUserId;
       });
       
       // Sortiere client-seitig nach updatedAt (neueste zuerst)
@@ -1686,10 +1759,48 @@ export const updateChat = async (chatId, updates) => {
   try {
     console.log('🔄 Updating chat:', chatId);
     
-    await updateDoc(doc(db, 'chats', chatId), {
-      ...updates,
-      updatedAt: serverTimestamp()
+    // WICHTIG: Lade Chat-Daten, um wichtige Felder beizubehalten
+    const chatDoc = await getDoc(doc(db, 'chats', chatId));
+    if (!chatDoc.exists()) {
+      console.error('❌ Chat nicht gefunden beim Update:', chatId);
+      throw new Error('Chat nicht gefunden');
+    }
+    
+    const chatData = chatDoc.data();
+    
+    // DEBUG: Logge aktuelle Chat-Daten vor Update
+    console.log('🔍 DEBUG updateChat - Vor Update:', {
+      chatId,
+      existingEntryType: chatData.entryType,
+      existingParticipants: chatData.participants,
+      existingType: chatData.type,
+      updatesEntryType: updates.entryType,
+      updatesParticipants: updates.participants
     });
+    
+    // WICHTIG: Stelle sicher, dass kritische Felder beibehalten werden
+    // Diese Felder dürfen nicht versehentlich entfernt werden
+    // WICHTIG: Explizit sicherstellen, dass entryType und participants IMMER gesetzt sind
+    const safeUpdates = {
+      ...updates,  // Wende Updates an
+      // WICHTIG: Explizit sicherstellen, dass entryType und participants IMMER gesetzt sind
+      // Diese Felder sind kritisch für die Filterlogik in getChatsForUser
+      entryType: updates.entryType !== undefined ? updates.entryType : (chatData.entryType || 'chat'),
+      participants: updates.participants !== undefined ? updates.participants : (chatData.participants || []),
+      // Behalte type für Rückwärtskompatibilität (wird nicht für Filterung verwendet)
+      type: updates.type !== undefined ? updates.type : (chatData.type || 'chat'),
+      updatedAt: serverTimestamp()
+    };
+    
+    // DEBUG: Logge finale Updates
+    console.log('🔍 DEBUG updateChat - Finale Updates:', {
+      chatId,
+      entryType: safeUpdates.entryType,
+      participants: safeUpdates.participants,
+      type: safeUpdates.type
+    });
+    
+    await updateDoc(doc(db, 'chats', chatId), safeUpdates);
     
     console.log('✅ Chat updated:', chatId);
     return true;
@@ -2744,9 +2855,12 @@ export const deleteNotificationsForChat = async (userId, chatId, tradeRequestId 
     const notificationsToDelete = [];
     
     // Finde Notifications für diesen Chat (chatId)
+    // WICHTIG: Lösche NUR Chat-Notifications, NICHT Hinweis-Notifications (hint-decision, hint-small)
+    // Hinweise sollen bleiben, bis der User sie manuell löscht
     const q1 = query(
       collection(db, 'users', userId, 'notifications'),
-      where('chatId', '==', chatId)
+      where('chatId', '==', chatId),
+      where('type', '==', 'chat')
     );
     const snapshot1 = await getDocs(q1);
     snapshot1.docs.forEach(doc => notificationsToDelete.push(doc.ref));
