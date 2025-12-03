@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "bottletrade",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -16,7 +17,8 @@
       "supportsTablet": true,
       "statusBarStyle": "light-content",
       "statusBarBackgroundColor": "#2c2c2c",
-      "bundleIdentifier": "com.mlangebeck.mobileapp"
+      "bundleIdentifier": "com.mlangebeck.mobileapp",
+      "associatedDomains": ["applinks:bottle-trade.de"]
     },
     "android": {
       "adaptiveIcon": {
@@ -26,7 +28,24 @@
       "edgeToEdgeEnabled": true,
       "statusBarStyle": "light-content",
       "statusBarBackgroundColor": "#2c2c2c",
-      "package": "com.mlangebeck.mobileapp"
+      "package": "com.mlangebeck.mobileapp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "bottletrade"
+            },
+            {
+              "scheme": "https",
+              "host": "bottle-trade.de",
+              "pathPrefix": "/shop"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

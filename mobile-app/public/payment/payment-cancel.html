@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zahlung abgebrochen - Bottle-Trade</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #2c2c2c 0%, #1a1a1a 100%);
+            color: white;
+            padding: 20px;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            color: #a9c7cd;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        p {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+        .spinner {
+            border: 3px solid rgba(169, 199, 205, 0.3);
+            border-top: 3px solid #a9c7cd;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid rgba(255, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        .order-id {
+            font-family: monospace;
+            background: rgba(169, 199, 205, 0.2);
+            padding: 0.5rem;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 0.5rem;
+        }
+        button:hover {
+            background: #8fb3b9 !important;
+            transform: scale(1.05);
+            transition: all 0.2s;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>❌ Zahlung abgebrochen</h1>
+        <p id="statusText">Sie werden zur App weitergeleitet...</p>
+        <div class="spinner" id="spinner"></div>
+        <button id="openAppButton" style="display: none; background: #a9c7cd; color: #1a1a1a; border: none; padding: 1rem 2rem; border-radius: 8px; font-size: 1.1rem; font-weight: 600; cursor: pointer; margin-top: 1rem;">
+            Zur App öffnen
+        </button>
+        <div id="error" class="error" style="display: none;">
+            <p>Die App konnte nicht automatisch geöffnet werden.</p>
+            <p>Bitte klicken Sie auf den Button oben, um die App zu öffnen.</p>
+            <p class="order-id" id="orderIdDisplay"></p>
+        </div>
+    </div>
+    <script>
+        // Hole orderId aus URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('orderId');
+        
+        // Deep Link URL
+        const deepLink = orderId 
+            ? `bottletrade://payment-cancel?orderId=${encodeURIComponent(orderId)}`
+            : 'bottletrade://payment-cancel';
+        
+        console.log('Weiterleitung zu:', deepLink);
+        
+        // Zeige Order ID falls vorhanden
+        if (orderId) {
+            const orderIdDisplay = document.getElementById('orderIdDisplay');
+            if (orderIdDisplay) {
+                orderIdDisplay.textContent = `Order ID: ${orderId}`;
+            }
+        }
+        
+        // Prüfe ob iOS/Safari
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        
+        let appOpened = false;
+        const spinner = document.getElementById('spinner');
+        const statusText = document.getElementById('statusText');
+        const openAppButton = document.getElementById('openAppButton');
+        const errorDiv = document.getElementById('error');
+        
+        function openApp() {
+            // Versuche Deep Link zu öffnen
+            try {
+                window.location.href = deepLink;
+                appOpened = true;
+                
+                // Prüfe nach 1 Sekunde, ob die App geöffnet wurde
+                setTimeout(() => {
+                    if (!document.hidden) {
+                        // App wurde nicht geöffnet, zeige Button
+                        if (spinner) spinner.style.display = 'none';
+                        if (statusText) statusText.textContent = 'Klicken Sie auf den Button, um die App zu öffnen:';
+                        if (openAppButton) openAppButton.style.display = 'inline-block';
+                    }
+                }, 1000);
+            } catch (e) {
+                console.error('Fehler beim Öffnen des Deep Links:', e);
+                if (spinner) spinner.style.display = 'none';
+                if (statusText) statusText.textContent = 'Klicken Sie auf den Button, um die App zu öffnen:';
+                if (openAppButton) openAppButton.style.display = 'inline-block';
+            }
+        }
+        
+        // Button-Event-Handler
+        if (openAppButton) {
+            openAppButton.addEventListener('click', () => {
+                openApp();
+            });
+        }
+        
+        // Prüfe, ob die App geöffnet wurde (Seite wird ausgeblendet)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                appOpened = true;
+            }
+        });
+        
+        // Für iOS/Safari: Zeige sofort den Button (kein automatischer Redirect)
+        if (isIOS || isSafari) {
+            // Warte kurz, dann zeige Button
+            setTimeout(() => {
+                if (spinner) spinner.style.display = 'none';
+                if (statusText) statusText.textContent = 'Klicken Sie auf den Button, um zur App zu gelangen:';
+                if (openAppButton) openAppButton.style.display = 'inline-block';
+            }, 1000);
+        } else {
+            // Für andere Browser: Versuche automatischen Redirect
+            setTimeout(() => {
+                openApp();
+                
+                // Nach 2 Sekunden Button anzeigen, falls App nicht geöffnet wurde
+                setTimeout(() => {
+                    if (!appOpened && !document.hidden) {
+                        if (spinner) spinner.style.display = 'none';
+                        if (statusText) statusText.textContent = 'Klicken Sie auf den Button, um die App zu öffnen:';
+                        if (openAppButton) openAppButton.style.display = 'inline-block';
+                    }
+                }, 2000);
+            }, 500);
+        }
+    </script>
+</body>
+</html>

@@ -12,7 +12,8 @@ import {
   orderBy, 
   limit,
   serverTimestamp,
-  writeBatch
+  writeBatch,
+  increment
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../config/firebase-web';
@@ -22,6 +23,34 @@ import { logNotificationEvent } from './notificationLogger';
 // WICHTIG: Globale Tracking-Maps für Subscriptions (verhindert Duplikate)
 // Diese Maps tracken bekannte Notifications pro User, um zu verhindern, dass existierende Notifications als "neu" erkannt werden
 const knownNotificationIdsPerUser = new Map(); // Map<userId, Set<notificationId>>
+
+/**
+ * Konvertiert altes labelImage zu labelImages Array für Rückwärtskompatibilität
+ * @param {Object} wine - Wein-Objekt aus Firestore
+ * @returns {Object} Wein mit normalisiertem labelImages Array
+ */
+const normalizeWineImages = (wine) => {
+  if (!wine) return wine;
+  
+  // Wenn labelImages bereits existiert, verwende es
+  if (wine.labelImages && Array.isArray(wine.labelImages) && wine.labelImages.length > 0) {
+    return wine;
+  }
+  
+  // Wenn nur labelImage existiert, konvertiere zu labelImages
+  if (wine.labelImage) {
+    return {
+      ...wine,
+      labelImages: [wine.labelImage]
+    };
+  }
+  
+  // Kein Bild vorhanden
+  return {
+    ...wine,
+    labelImages: []
+  };
+};
 
 // ===== USER MANAGEMENT =====
 
@@ -120,6 +149,20 @@ export const getUserByEmailOrUsername = async (emailOrUsername) => {
   } catch (error) {
     console.error('❌ Error getting user by email or username:', error);
     console.error('❌ db value:', db);
+    
+    // Prüfe ob es ein Firestore-Verbindungsfehler ist
+    if (error.message && (
+      error.message.includes('Could not reach Cloud Firestore') ||
+      error.message.includes('network') ||
+      error.message.includes('timeout') ||
+      error.message.includes('offline') ||
+      error.message.includes('Backend didn\'t respond')
+    )) {
+      const connectionError = new Error('Could not reach Cloud Firestore backend');
+      connectionError.originalError = error;
+      throw connectionError;
+    }
+    
     throw error;
   }
 };
@@ -150,6 +193,57 @@ export const updateUser = async (uid, userData) => {
   }
 };
 
+// BTP-Funktionen entfernt - BTP wird nicht mehr verwendet
+
+/**
+ * Löscht das Profilbild eines Users
+ * @param {string} uid - User UID
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const deleteUserProfileImage = async (uid) => {
+  try {
+    console.log('🔄 Löschen des Profilbildes für User:', uid);
+    
+    // Hole User-Daten
+    const userData = await getUser(uid);
+    if (!userData) {
+      throw new Error('User not found');
+    }
+    
+    // Wenn ein Profilbild existiert, lösche es aus Storage
+    if (userData.profilbild) {
+      try {
+        await deleteImageFromStorage(userData.profilbild);
+        console.log('✅ Profilbild aus Storage gelöscht');
+      } catch (error) {
+        console.warn('⚠️ Fehler beim Löschen des Profilbildes aus Storage (nicht kritisch):', error);
+        // Fehler beim Löschen aus Storage ist nicht kritisch, fahre fort
+      }
+    }
+    
+    // Setze Profilbild in Firestore auf null
+    const userQuery = query(collection(db, 'users'), where('uid', '==', uid));
+    const querySnapshot = await getDocs(userQuery);
+    
+    if (querySnapshot.empty) {
+      throw new Error('User not found');
+    }
+    
+    const userDoc = querySnapshot.docs[0];
+    await updateDoc(doc(db, 'users', userDoc.id), {
+      profilbild: null,
+      updatedAt: serverTimestamp()
+    });
+    
+    console.log('✅ Profilbild erfolgreich gelöscht');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Fehler beim Löschen des Profilbildes:', error);
+    throw error;
+  }
+};
+
 // Heartbeat: lastActive setzen (und optional online true)
 export const updateUserLastActive = async (uid) => {
   try {
@@ -166,6 +260,178 @@ export const updateUserLastActive = async (uid) => {
   } catch (error) {
     console.error('❌ Error updating lastActive:', error);
     return false;
+  }
+};
+
+// Lade alle User aus Firestore
+export const getAllUsers = async () => {
+  try {
+    const usersQuery = query(collection(db, 'users'));
+    const querySnapshot = await getDocs(usersQuery);
+    
+    const users = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    return users;
+  } catch (error) {
+    console.error('❌ Error getting all users:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle Admin-User aus Firestore ab
+ * @returns {Promise<Array>} Array von Admin-Usern
+ */
+export const getAllAdmins = async () => {
+  try {
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('isAdmin', '==', true)
+    );
+    const querySnapshot = await getDocs(usersQuery);
+    
+    const admins = querySnapshot.docs.map(doc => ({
+      uid: doc.id,
+      ...doc.data()
+    }));
+    
+    console.log(`✅ Found ${admins.length} admin(s)`);
+    return admins;
+  } catch (error) {
+    console.error('❌ Error getting all admins:', error);
+    throw error;
+  }
+};
+
+/**
+ * Erstellt Notifications für alle Admins, wenn ein neuer User sich registriert
+ * @param {string} newUserId - UID des neuen Users
+ * @param {string} newUserUsername - Username des neuen Users
+ * @param {string} newUserEmail - E-Mail des neuen Users
+ * @returns {Promise<void>}
+ */
+export const notifyAdminsAboutNewRegistration = async (newUserId, newUserUsername, newUserEmail) => {
+  try {
+    console.log('🔄 Notifying admins about new registration:', newUserUsername);
+    
+    // Alle Admins abrufen
+    const admins = await getAllAdmins();
+    
+    if (admins.length === 0) {
+      console.log('ℹ️ No admins found, skipping notification');
+      return;
+    }
+    
+    // Für jeden Admin eine Notification erstellen
+    const notificationPromises = admins.map(admin => {
+      return createNotification(admin.uid, {
+        type: 'system',
+        title: 'Neue Registrierung',
+        message: `Neuer User "${newUserUsername}" (${newUserEmail}) hat sich registriert.`,
+        userId: newUserId,
+        username: newUserUsername,
+        email: newUserEmail,
+        action: 'view_user', // Optional: für spätere Navigation zum User-Profil
+        isRead: false,
+        isArchived: false,
+        isCompleted: false
+      });
+    });
+    
+    // Alle Notifications parallel erstellen
+    await Promise.all(notificationPromises);
+    
+    console.log(`✅ Created registration notifications for ${admins.length} admin(s)`);
+  } catch (error) {
+    console.error('❌ Error notifying admins about new registration:', error);
+    // Fehler nicht weiterwerfen, damit Registrierung nicht fehlschlägt
+  }
+};
+
+/**
+ * Ruft den ersten Admin-User aus Firestore ab (für Support-Chat)
+ * @returns {Promise<Object|null>} Admin-User oder null wenn kein Admin gefunden
+ */
+export const getFirstAdmin = async () => {
+  try {
+    const admins = await getAllAdmins();
+    if (admins.length === 0) {
+      console.log('ℹ️ No admin found');
+      return null;
+    }
+    // Gibt den ersten Admin zurück
+    return admins[0];
+  } catch (error) {
+    console.error('❌ Error getting first admin:', error);
+    throw error;
+  }
+};
+
+/**
+ * Erstellt einen Support-Chat zwischen einem User und dem Admin
+ * @param {string} userId - UID des Users, der Support anfragt
+ * @returns {Promise<string>} Chat-ID des erstellten Chats
+ */
+export const createSupportChat = async (userId) => {
+  try {
+    console.log('🔄 Creating support chat for user:', userId);
+    
+    // Admin finden
+    const admin = await getFirstAdmin();
+    if (!admin) {
+      throw new Error('Kein Admin gefunden. Support-Chat kann nicht erstellt werden.');
+    }
+    
+    // Prüfe, ob bereits ein Support-Chat existiert
+    const existingChats = await getChatsForUser(userId);
+    const existingSupportChat = existingChats.find(chat => 
+      chat.participants && 
+      chat.participants.includes(admin.uid) && 
+      chat.type === 'chat' &&
+      chat.entryType === 'chat'
+    );
+    
+    if (existingSupportChat) {
+      console.log('ℹ️ Support-Chat existiert bereits:', existingSupportChat.id);
+      return existingSupportChat.id;
+    }
+    
+    // Neuen Support-Chat erstellen
+    const chatData = {
+      type: 'chat',
+      entryType: 'chat',
+      participants: [userId, admin.uid],
+      createdBy: userId,
+      lastMessage: 'Support-Anfrage gestartet',
+      lastMessageSenderId: userId,
+      lastMessageTimestamp: serverTimestamp(),
+      unreadCount: 0,
+      readBy: [],
+      isSupportChat: true // Markierung als Support-Chat
+    };
+    
+    const chatId = await createChat(chatData);
+    
+    // System-Nachricht hinzufügen
+    try {
+      await addChatMessage(chatId, {
+        senderId: 'system',
+        message: `Dies ist der Support-Chat. ${admin.username || admin.email || 'Admin'} wird dir hierbei helfen.`,
+        timestamp: serverTimestamp(),
+        isSystemMessage: true
+      });
+    } catch (messageError) {
+      console.error('⚠️ Fehler beim Hinzufügen der System-Nachricht (Chat wurde trotzdem erstellt):', messageError);
+    }
+    
+    console.log('✅ Support-Chat erstellt:', chatId);
+    return chatId;
+  } catch (error) {
+    console.error('❌ Error creating support chat:', error);
+    throw error;
   }
 };
 
@@ -243,7 +509,7 @@ export const checkImageMigrationStatus = async (userId = null) => {
     }
     
     const winesSnapshot = await getDocs(winesQuery);
-    const wines = winesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const wines = winesSnapshot.docs.map(doc => normalizeWineImages({ id: doc.id, ...doc.data() }));
     
     let total = 0;
     let migrated = 0;
@@ -329,7 +595,7 @@ export const migrateAllLocalWineImagesToStorage = async (userId = null) => {
     }
     
     const winesSnapshot = await getDocs(winesQuery);
-    const wines = winesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const wines = winesSnapshot.docs.map(doc => normalizeWineImages({ id: doc.id, ...doc.data() }));
     
     let success = 0;
     let failed = 0;
@@ -485,6 +751,74 @@ export const uploadImageToStorage = async (imageUri, folder = 'wines', fileName 
 };
 
 /**
+ * Validiert ein Profilbild vor dem Upload
+ * @param {string} imageUri - URI des Bildes
+ * @param {number} fileSize - Dateigröße in Bytes (optional)
+ * @param {string} mimeType - MIME-Type des Bildes (optional)
+ * @returns {Promise<{valid: boolean, error?: string}>}
+ */
+export const validateProfileImage = async (imageUri, fileSize = null, mimeType = null) => {
+  try {
+    // Maximale Dateigröße: 5MB
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in Bytes
+    
+    // Erlaubte Formate
+    const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
+    const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png'];
+    
+    // Prüfe Dateigröße, falls verfügbar
+    if (fileSize !== null && fileSize > MAX_FILE_SIZE) {
+      const sizeInMB = (fileSize / (1024 * 1024)).toFixed(2);
+      return {
+        valid: false,
+        error: `Das Bild ist zu groß (${sizeInMB} MB). Maximale Größe: 5 MB.`
+      };
+    }
+    
+    // Prüfe MIME-Type, falls verfügbar
+    if (mimeType) {
+      if (!ALLOWED_MIME_TYPES.includes(mimeType.toLowerCase())) {
+        return {
+          valid: false,
+          error: 'Nur JPG- und PNG-Bilder sind erlaubt.'
+        };
+      }
+    }
+    
+    // Prüfe Dateierweiterung aus URI
+    const uriLower = imageUri.toLowerCase();
+    const hasValidExtension = ALLOWED_EXTENSIONS.some(ext => uriLower.includes(ext));
+    
+    if (!hasValidExtension && !mimeType) {
+      // Wenn keine MIME-Type verfügbar ist und keine gültige Erweiterung gefunden wurde
+      // Versuche, das Format aus dem Blob zu bestimmen
+      try {
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        
+        if (blob.type && !ALLOWED_MIME_TYPES.includes(blob.type.toLowerCase())) {
+          return {
+            valid: false,
+            error: 'Nur JPG- und PNG-Bilder sind erlaubt.'
+          };
+        }
+      } catch (error) {
+        console.warn('⚠️ Konnte Bild-Format nicht prüfen:', error);
+        // Wenn Prüfung fehlschlägt, erlaube es (Fallback)
+      }
+    }
+    
+    return { valid: true };
+  } catch (error) {
+    console.error('❌ Fehler bei der Bild-Validierung:', error);
+    return {
+      valid: false,
+      error: 'Fehler bei der Bild-Validierung. Bitte versuchen Sie es erneut.'
+    };
+  }
+};
+
+/**
  * Löscht ein Bild aus Firebase Storage
  * @param {string} imageUrl - URL des Bildes in Firebase Storage
  * @returns {Promise<void>}
@@ -519,34 +853,41 @@ export const addWine = async (wineData) => {
   try {
     console.log('🔄 Adding wine:', wineData.name);
     
-    // Prüfe ob ein Bild hochgeladen werden muss
-    let labelImageUrl = wineData.labelImage;
+    // Unterstütze sowohl labelImage (alt) als auch labelImages (neu) für Rückwärtskompatibilität
+    let labelImages = wineData.labelImages || (wineData.labelImage ? [wineData.labelImage] : []);
     
-    // Prüfe ob es eine lokale URI ist (file://, content://, ph://)
-    if (wineData.labelImage && isLocalImageUri(wineData.labelImage)) {
-      // Bild hochladen zu Firebase Storage
-      try {
-        labelImageUrl = await uploadImageToStorage(wineData.labelImage, 'wines');
-        console.log('✅ Bild erfolgreich hochgeladen:', labelImageUrl);
-      } catch (uploadError) {
-        console.error('❌ Fehler beim Hochladen des Bildes:', uploadError);
-        // Wenn Upload fehlschlägt, verwende die lokale URI als Fallback
-        // WICHTIG: Lokale URIs funktionieren nur auf dem ursprünglichen Gerät!
-        labelImageUrl = wineData.labelImage;
+    // Lade alle lokalen Bilder hoch
+    const uploadedImages = [];
+    for (const imageUri of labelImages) {
+      if (isLocalImageUri(imageUri)) {
+        try {
+          const uploadedUrl = await uploadImageToStorage(imageUri, 'wines');
+          uploadedImages.push(uploadedUrl);
+          console.log('✅ Bild erfolgreich hochgeladen:', uploadedUrl);
+        } catch (uploadError) {
+          console.error('❌ Fehler beim Hochladen des Bildes:', uploadError);
+          // Wenn Upload fehlschlägt, verwende die lokale URI als Fallback
+          uploadedImages.push(imageUri);
+        }
+      } else {
+        // Bereits eine URL (Firebase Storage oder andere)
+        uploadedImages.push(imageUri);
       }
     }
-    // Wenn es bereits eine HTTP/HTTPS URL ist (Firebase Storage oder andere), verwende sie direkt
     
     // Entferne undefined Felder, da Firestore diese nicht akzeptiert
     const cleanWineData = Object.keys(wineData).reduce((acc, key) => {
-      if (wineData[key] !== undefined) {
+      if (wineData[key] !== undefined && key !== 'labelImage') { // Entferne altes labelImage
         acc[key] = wineData[key];
       }
       return acc;
     }, {});
     
-    // Ersetze labelImage mit der Upload-URL
-    cleanWineData.labelImage = labelImageUrl;
+    // Setze labelImages Array (und labelImage für Rückwärtskompatibilität)
+    cleanWineData.labelImages = uploadedImages;
+    if (uploadedImages.length > 0) {
+      cleanWineData.labelImage = uploadedImages[0]; // Erstes Bild als Fallback für alte Clients
+    }
     
     const wineRef = await addDoc(collection(db, 'wines'), {
       ...cleanWineData,
@@ -578,7 +919,7 @@ export const getAllWinesByOwner = async (ownerId) => {
     const querySnapshot = await getDocs(winesQuery);
     
     let wines = querySnapshot.docs
-      .map(doc => ({
+      .map(doc => normalizeWineImages({
         id: doc.id,
         ...doc.data()
       }));
@@ -758,7 +1099,7 @@ export const getAvailableWines = async () => {
     
     const snap1 = await getDocs(q1);
     
-    let wines = snap1.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+    let wines = snap1.docs.map(doc => normalizeWineImages({ id: doc.id, ...doc.data() })).sort((a, b) => {
       // Sortiere nach createdAt (neueste zuerst)
       const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
       const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
@@ -839,67 +1180,43 @@ export const updateWine = async (wineId, wineData) => {
   try {
     console.log('🔄 Updating wine:', wineId);
     
-    // Prüfe ob ein neues Bild hochgeladen werden muss
-    let labelImageUrl = wineData.labelImage;
-    let oldImageUrl = null;
-    
-    // Hole altes Bild-URL um es später zu löschen oder zu migrieren
+    // Hole alte Daten für Migration
     const wineDoc = await getDoc(doc(db, 'wines', wineId));
-    if (wineDoc.exists()) {
-      const oldWineData = wineDoc.data();
-      oldImageUrl = oldWineData.labelImage;
+    const oldWineData = wineDoc.exists() ? wineDoc.data() : {};
+    const oldLabelImages = oldWineData.labelImages || (oldWineData.labelImage ? [oldWineData.labelImage] : []);
+    
+    // Unterstütze sowohl labelImage (alt) als auch labelImages (neu) für Rückwärtskompatibilität
+    let labelImages = wineData.labelImages || (wineData.labelImage ? [wineData.labelImage] : oldLabelImages);
+    
+    // Lade alle neuen lokalen Bilder hoch
+    const uploadedImages = [];
+    for (const imageUri of labelImages) {
+      if (isLocalImageUri(imageUri)) {
+        try {
+          const uploadedUrl = await uploadImageToStorage(imageUri, 'wines');
+          uploadedImages.push(uploadedUrl);
+          console.log('✅ Bild erfolgreich hochgeladen:', uploadedUrl);
+        } catch (uploadError) {
+          console.error('❌ Fehler beim Hochladen des Bildes:', uploadError);
+          uploadedImages.push(imageUri); // Fallback
+        }
+      } else {
+        uploadedImages.push(imageUri);
+      }
     }
     
-    // Prüfe ob neues Bild eine lokale URI ist (file://, content://, ph://)
-    if (wineData.labelImage && isLocalImageUri(wineData.labelImage)) {
-      // Neues Bild muss hochgeladen werden
-      try {
-        // Bild hochladen zu Firebase Storage
-        labelImageUrl = await uploadImageToStorage(wineData.labelImage, 'wines');
-        console.log('✅ Bild erfolgreich hochgeladen:', labelImageUrl);
-        
-        // Lösche altes Bild aus Storage (falls vorhanden und es eine Firebase Storage URL ist)
-        if (oldImageUrl && oldImageUrl.startsWith('https://firebasestorage.googleapis.com')) {
-          try {
-            await deleteImageFromStorage(oldImageUrl);
-          } catch (deleteError) {
-            console.warn('⚠️ Konnte altes Bild nicht löschen:', deleteError);
-          }
-        }
-      } catch (uploadError) {
-        console.error('❌ Fehler beim Hochladen des Bildes:', uploadError);
-        // Wenn Upload fehlschlägt, verwende die lokale URI als Fallback
-        labelImageUrl = wineData.labelImage;
-      }
-    } else if (!wineData.labelImage && oldImageUrl && isLocalImageUri(oldImageUrl)) {
-      // Kein neues Bild angegeben, aber altes Bild ist noch lokal
-      // Versuche das alte Bild zu migrieren (nur wenn es noch verfügbar ist)
-      console.log('🔄 Versuche altes lokales Bild zu migrieren:', oldImageUrl);
-      try {
-        const migratedUrl = await migrateLocalImageToStorage(oldImageUrl, 'wines');
-        if (migratedUrl) {
-          labelImageUrl = migratedUrl;
-          console.log('✅ Altes Bild erfolgreich migriert:', migratedUrl);
-        } else {
-          // Migration fehlgeschlagen - behalte alte URL (wird möglicherweise nicht mehr funktionieren)
-          labelImageUrl = oldImageUrl;
-          console.warn('⚠️ Migration des alten Bildes fehlgeschlagen, behalte lokale URI');
-        }
-      } catch (migrationError) {
-        console.error('❌ Fehler beim Migrieren des alten Bildes:', migrationError);
-        labelImageUrl = oldImageUrl;
-      }
-    } else if (!wineData.labelImage) {
-      // Kein neues Bild und kein altes Bild oder altes Bild ist bereits eine URL
-      labelImageUrl = oldImageUrl || null;
-    }
-    
-    // Ersetze labelImage mit der Upload-URL
+    // Ersetze labelImages mit den Upload-URLs
     const updateData = {
       ...wineData,
-      labelImage: labelImageUrl,
+      labelImages: uploadedImages,
+      labelImage: uploadedImages.length > 0 ? uploadedImages[0] : null, // Fallback für alte Clients
       updatedAt: serverTimestamp()
     };
+    
+    // Entferne labelImage aus updateData, wenn labelImages vorhanden ist (verhindert Konflikte)
+    if (updateData.labelImages && updateData.labelImages.length > 0) {
+      // labelImage wird als Fallback gesetzt
+    }
     
     await updateDoc(doc(db, 'wines', wineId), updateData);
     
@@ -2918,6 +3235,2373 @@ export const deleteNotificationsForTradeRequest = async (userId, requestId) => {
     return querySnapshot.docs.length;
   } catch (error) {
     console.error('❌ Error deleting notifications for trade request:', error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// SCHWARZES BRETT / INSERATE FUNKTIONEN
+// ============================================================================
+
+/**
+ * Erstellt ein neues Inserat im Schwarzen Brett
+ * @param {Object} inseratData - Inserat-Daten
+ * @param {string} inseratData.type - "suche" oder "biete"
+ * @param {string} inseratData.title - Titel des Inserats
+ * @param {string} inseratData.description - Beschreibung
+ * @param {Array<string>} inseratData.images - Array von Bild-URLs
+ * @param {string} inseratData.userId - User-ID des Erstellers
+ * @param {string} [inseratData.contactInfo] - Kontaktinformationen (optional)
+ * @returns {Promise<string>} ID des erstellten Inserats
+ */
+export const createInserat = async (inseratData) => {
+  try {
+    const {
+      type,
+      title,
+      description,
+      images = [],
+      userId,
+      contactInfo = null,
+    } = inseratData;
+
+    // Validierung
+    if (!type || !['suche', 'biete'].includes(type)) {
+      throw new Error('Type muss "suche" oder "biete" sein');
+    }
+    if (!title || !description || !userId) {
+      throw new Error('Titel, Beschreibung und User-ID sind Pflichtfelder');
+    }
+
+    const inseratRef = collection(db, 'inserate');
+    const newInserat = {
+      type,
+      title,
+      description,
+      images,
+      userId,
+      contactInfo,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(inseratRef, newInserat);
+    console.log('✅ Inserat erstellt:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('❌ Fehler beim Erstellen des Inserats:', error);
+    throw error;
+  }
+};
+
+/**
+ * Aktualisiert ein bestehendes Inserat
+ * @param {string} inseratId - ID des Inserats
+ * @param {Object} updates - Zu aktualisierende Felder
+ * @returns {Promise<void>}
+ */
+export const updateInserat = async (inseratId, updates) => {
+  try {
+    const inseratRef = doc(db, 'inserate', inseratId);
+    const updateData = {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    };
+    await updateDoc(inseratRef, updateData);
+    console.log('✅ Inserat aktualisiert:', inseratId);
+  } catch (error) {
+    console.error('❌ Fehler beim Aktualisieren des Inserats:', error);
+    throw error;
+  }
+};
+
+/**
+ * Löscht ein Inserat
+ * @param {string} inseratId - ID des Inserats
+ * @returns {Promise<void>}
+ */
+export const deleteInserat = async (inseratId) => {
+  try {
+    const inseratRef = doc(db, 'inserate', inseratId);
+    await deleteDoc(inseratRef);
+    console.log('✅ Inserat gelöscht:', inseratId);
+  } catch (error) {
+    console.error('❌ Fehler beim Löschen des Inserats:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt ein einzelnes Inserat
+ * @param {string} inseratId - ID des Inserats
+ * @returns {Promise<Object|null>} Inserat-Daten oder null
+ */
+export const getInserat = async (inseratId) => {
+  try {
+    const inseratRef = doc(db, 'inserate', inseratId);
+    const docSnap = await getDoc(inseratRef);
+    
+    if (docSnap.exists()) {
+      return {
+        id: docSnap.id,
+        ...docSnap.data(),
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Fehler beim Laden des Inserats:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt alle Inserate (optional gefiltert nach Typ)
+ * @param {string} [type] - Optional: "suche" oder "biete" zum Filtern
+ * @returns {Promise<Array>} Array von Inseraten
+ */
+export const getAllInserate = async (type = null) => {
+  try {
+    const inserateRef = collection(db, 'inserate');
+    // Sortiere immer nach createdAt (ohne Filter), dann filtere clientseitig
+    // Dies vermeidet die Notwendigkeit eines zusammengesetzten Index
+    const q = query(inserateRef, orderBy('createdAt', 'desc'));
+    
+    const querySnapshot = await getDocs(q);
+    const inserate = [];
+    
+    querySnapshot.forEach((doc) => {
+      const data = {
+        id: doc.id,
+        ...doc.data(),
+      };
+      
+      // Clientseitiges Filtern nach Typ (falls angegeben)
+      if (!type || data.type === type) {
+        inserate.push(data);
+      }
+    });
+    
+    console.log(`✅ ${inserate.length} Inserate geladen${type ? ` (Typ: ${type})` : ''}`);
+    return inserate;
+  } catch (error) {
+    console.error('❌ Fehler beim Laden der Inserate:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt alle Inserate eines Users
+ * @param {string} userId - User-ID
+ * @returns {Promise<Array>} Array von Inseraten des Users
+ */
+export const getInserateByUser = async (userId) => {
+  try {
+    const inserateRef = collection(db, 'inserate');
+    const q = query(
+      inserateRef,
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const inserate = [];
+    
+    querySnapshot.forEach((doc) => {
+      inserate.push({
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+    
+    console.log(`✅ ${inserate.length} Inserate von User ${userId} geladen`);
+    return inserate;
+  } catch (error) {
+    console.error('❌ Fehler beim Laden der Inserate des Users:', error);
+    throw error;
+  }
+};
+
+/**
+ * Abonniert Inserate in Echtzeit (optional gefiltert nach Typ)
+ * @param {string} [type] - Optional: "suche" oder "biete" zum Filtern
+ * @param {Function} callback - Callback-Funktion, die mit dem Array von Inseraten aufgerufen wird
+ * @returns {Function} Unsubscribe-Funktion
+ */
+export const subscribeInserate = (type = null, callback) => {
+  try {
+    const inserateRef = collection(db, 'inserate');
+    // Sortiere immer nach createdAt (ohne Filter), dann filtere clientseitig
+    // Dies vermeidet die Notwendigkeit eines zusammengesetzten Index
+    const q = query(inserateRef, orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const inserate = [];
+        querySnapshot.forEach((doc) => {
+          const data = {
+            id: doc.id,
+            ...doc.data(),
+          };
+          
+          // Clientseitiges Filtern nach Typ (falls angegeben)
+          if (!type || data.type === type) {
+            inserate.push(data);
+          }
+        });
+        callback(inserate);
+      },
+      (error) => {
+        console.error('❌ Fehler bei Inserate-Subscription:', error);
+        callback([]);
+      }
+    );
+    
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Fehler beim Abonnieren der Inserate:', error);
+    return () => {}; // Leere Unsubscribe-Funktion bei Fehler
+  }
+};
+
+// ============================================================================
+// WUNSCHLISTE FUNKTIONEN
+// ============================================================================
+
+/**
+ * Erstellt einen neuen Weinwunsch
+ * @param {string} userId - User-ID
+ * @param {Object} wishData - Wunsch-Daten
+ * @param {string} [wishData.name] - Weinname (optional)
+ * @param {string} [wishData.winery] - Weingut (optional)
+ * @param {number} [wishData.vintage] - Jahrgang (optional)
+ * @param {string} [wishData.region] - Region (optional)
+ * @param {string} [wishData.grapeVariety] - Rebsorte (optional)
+ * @param {string} [wishData.notes] - Notizen (optional)
+ * @returns {Promise<string>} ID des erstellten Wunsches
+ */
+export const createWish = async (userId, wishData) => {
+  try {
+    // Validierung: Mindestens ein Feld muss ausgefüllt sein
+    const hasAnyField = wishData.name || wishData.winery || wishData.vintage || 
+                       wishData.region || wishData.grapeVariety;
+    if (!hasAnyField) {
+      throw new Error('Mindestens ein Feld (Name, Weingut, Jahrgang, Region oder Rebsorte) muss ausgefüllt sein');
+    }
+
+    const wishRef = collection(db, 'users', userId, 'wishlist');
+    const newWish = {
+      ...wishData,
+      hasMatch: false,
+      matchedWineIds: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      lastCheckedAt: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(wishRef, newWish);
+    console.log('✅ Wunsch erstellt:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('❌ Fehler beim Erstellen des Wunsches:', error);
+    throw error;
+  }
+};
+
+/**
+ * Aktualisiert einen Weinwunsch
+ * @param {string} userId - User-ID
+ * @param {string} wishId - Wunsch-ID
+ * @param {Object} wishData - Aktualisierte Wunsch-Daten
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const updateWish = async (userId, wishId, wishData) => {
+  try {
+    // Validierung: Mindestens ein Feld muss ausgefüllt sein
+    const hasAnyField = wishData.name || wishData.winery || wishData.vintage || 
+                       wishData.region || wishData.grapeVariety;
+    if (!hasAnyField) {
+      throw new Error('Mindestens ein Feld (Name, Weingut, Jahrgang, Region oder Rebsorte) muss ausgefüllt sein');
+    }
+
+    const wishRef = doc(db, 'users', userId, 'wishlist', wishId);
+    await updateDoc(wishRef, {
+      ...wishData,
+      updatedAt: serverTimestamp(),
+      // Reset Match-Status beim Update (wird später neu geprüft)
+      hasMatch: false,
+      matchedWineIds: [],
+    });
+
+    console.log('✅ Wunsch aktualisiert:', wishId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Aktualisieren des Wunsches:', error);
+    throw error;
+  }
+};
+
+/**
+ * Löscht einen Weinwunsch
+ * @param {string} userId - User-ID
+ * @param {string} wishId - Wunsch-ID
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const deleteWish = async (userId, wishId) => {
+  try {
+    const wishRef = doc(db, 'users', userId, 'wishlist', wishId);
+    await deleteDoc(wishRef);
+    console.log('✅ Wunsch gelöscht:', wishId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Löschen des Wunsches:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt alle Wünsche eines Users
+ * @param {string} userId - User-ID
+ * @returns {Promise<Array>} Array von Wünschen
+ */
+export const getWishesForUser = async (userId) => {
+  try {
+    const wishRef = collection(db, 'users', userId, 'wishlist');
+    const q = query(wishRef, orderBy('createdAt', 'desc'));
+    
+    const querySnapshot = await getDocs(q);
+    const wishes = [];
+    
+    querySnapshot.forEach((doc) => {
+      wishes.push({
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+    
+    console.log(`✅ ${wishes.length} Wünsche von User ${userId} geladen`);
+    return wishes;
+  } catch (error) {
+    console.error('❌ Fehler beim Laden der Wünsche:', error);
+    throw error;
+  }
+};
+
+/**
+ * Abonniert Wünsche eines Users in Echtzeit
+ * @param {string} userId - User-ID
+ * @param {Function} callback - Callback-Funktion, die mit dem Array von Wünschen aufgerufen wird
+ * @returns {Function} Unsubscribe-Funktion
+ */
+export const subscribeWishesForUser = (userId, callback) => {
+  try {
+    const wishRef = collection(db, 'users', userId, 'wishlist');
+    const q = query(wishRef, orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const wishes = [];
+        querySnapshot.forEach((doc) => {
+          wishes.push({
+            id: doc.id,
+            ...doc.data(),
+          });
+        });
+        callback(wishes);
+      },
+      (error) => {
+        console.error('❌ Fehler bei Wunschliste-Subscription:', error);
+        callback([]);
+      }
+    );
+    
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Fehler beim Abonnieren der Wünsche:', error);
+    return () => {}; // Leere Unsubscribe-Funktion bei Fehler
+  }
+};
+
+/**
+ * Prüft, ob ein Wunsch Matches in der Weinbörse hat
+ * @param {string} userId - User-ID
+ * @param {string} wishId - Wunsch-ID
+ * @param {Array} publicWines - Array aller öffentlichen Weine (optional, wird geladen wenn nicht übergeben)
+ * @returns {Promise<Object>} { hasMatch: boolean, matchedWineIds: string[] }
+ */
+export const checkWishMatches = async (userId, wishId, publicWines = null) => {
+  try {
+    // Lade Wunsch
+    const wishRef = doc(db, 'users', userId, 'wishlist', wishId);
+    const wishDoc = await getDoc(wishRef);
+    
+    if (!wishDoc.exists()) {
+      throw new Error('Wunsch nicht gefunden');
+    }
+    
+    const wish = wishDoc.data();
+    
+    // Lade öffentliche Weine, falls nicht übergeben
+    if (!publicWines) {
+      publicWines = await getAvailableWines();
+    }
+    
+    // Filtere eigene Weine heraus
+    const currentUser = await getUser(userId);
+    const otherUsersWines = publicWines.filter(wine => {
+      return wine.ownerId !== userId && 
+             wine.owner !== currentUser?.username && 
+             wine.owner !== currentUser?.email;
+    });
+    
+    // Matching-Logik
+    const matchedWineIds = [];
+    
+    for (const wine of otherUsersWines) {
+      let matches = false;
+      
+      // Prüfe jedes Kriterium (mindestens eines muss passen)
+      if (wish.name && wine.name) {
+        if (wine.name.toLowerCase().includes(wish.name.toLowerCase())) {
+          matches = true;
+        }
+      }
+      
+      if (wish.winery && wine.winery) {
+        if (wine.winery.toLowerCase().includes(wish.winery.toLowerCase())) {
+          matches = true;
+        }
+      }
+      
+      if (wish.vintage && wine.vintage) {
+        if (wine.vintage === wish.vintage) {
+          matches = true;
+        }
+      }
+      
+      if (wish.region && wine.region) {
+        if (wine.region.toLowerCase().includes(wish.region.toLowerCase())) {
+          matches = true;
+        }
+      }
+      
+      if (wish.grapeVariety && wine.grapeVariety) {
+        if (wine.grapeVariety.toLowerCase().includes(wish.grapeVariety.toLowerCase())) {
+          matches = true;
+        }
+      }
+      
+      if (matches) {
+        matchedWineIds.push(wine.id);
+      }
+    }
+    
+    const hasMatch = matchedWineIds.length > 0;
+    
+    // Update Wunsch mit Match-Status
+    await updateDoc(wishRef, {
+      hasMatch,
+      matchedWineIds,
+      lastCheckedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    
+    console.log(`✅ Match-Prüfung für Wunsch ${wishId}: ${matchedWineIds.length} Matches gefunden`);
+    return { hasMatch, matchedWineIds };
+  } catch (error) {
+    console.error('❌ Fehler bei Match-Prüfung:', error);
+    throw error;
+  }
+};
+
+/**
+ * Prüft alle Wünsche eines Users auf Matches
+ * @param {string} userId - User-ID
+ * @returns {Promise<number>} Anzahl der Wünsche mit Matches
+ */
+export const checkAllWishMatches = async (userId) => {
+  try {
+    // Lade alle Wünsche
+    const wishes = await getWishesForUser(userId);
+    
+    if (wishes.length === 0) {
+      return 0;
+    }
+    
+    // Lade alle öffentlichen Weine einmal
+    const publicWines = await getAvailableWines();
+    
+    // Prüfe jeden Wunsch
+    let matchCount = 0;
+    for (const wish of wishes) {
+      const result = await checkWishMatches(userId, wish.id, publicWines);
+      if (result.hasMatch) {
+        matchCount++;
+      }
+    }
+    
+    console.log(`✅ Match-Prüfung abgeschlossen: ${matchCount} von ${wishes.length} Wünschen haben Matches`);
+    return matchCount;
+  } catch (error) {
+    console.error('❌ Fehler bei Match-Prüfung aller Wünsche:', error);
+    throw error;
+  }
+};
+
+// ===== WINERY MANAGEMENT =====
+
+/**
+ * Erstellt ein neues Weingut-Profil
+ * @param {Object} wineryData - Weingut-Daten
+ * @returns {Promise<string>} Weingut-ID
+ */
+export const createWinery = async (wineryData) => {
+  try {
+    if (!wineryData.ownerId) {
+      throw new Error('ownerId ist erforderlich');
+    }
+    if (!wineryData.name || !wineryData.name.trim()) {
+      throw new Error('Name ist erforderlich');
+    }
+
+    // Prüfe, ob bereits ein Weingut für diesen Owner existiert
+    const existingQuery = query(
+      collection(db, 'wineries'),
+      where('ownerId', '==', wineryData.ownerId)
+    );
+    const existingSnapshot = await getDocs(existingQuery);
+    
+    if (!existingSnapshot.empty) {
+      throw new Error('Ein Weingut-Profil für diesen Benutzer existiert bereits');
+    }
+
+    const wineryRef = await addDoc(collection(db, 'wineries'), {
+      ...wineryData,
+      // Verwende isVerified aus wineryData, falls vorhanden, sonst false
+      isVerified: wineryData.isVerified !== undefined ? wineryData.isVerified : false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Weingut erstellt:', wineryRef.id);
+    return wineryRef.id;
+  } catch (error) {
+    console.error('❌ Fehler beim Erstellen des Weinguts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Aktualisiert ein Weingut-Profil
+ * @param {string} wineryId - Weingut-ID
+ * @param {Object} updates - Zu aktualisierende Felder
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const updateWinery = async (wineryId, updates) => {
+  try {
+    const wineryRef = doc(db, 'wineries', wineryId);
+    await updateDoc(wineryRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Weingut aktualisiert:', wineryId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Aktualisieren des Weinguts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Löscht ein Weingut-Profil
+ * @param {string} wineryId - Weingut-ID
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const deleteWinery = async (wineryId) => {
+  try {
+    await deleteDoc(doc(db, 'wineries', wineryId));
+    console.log('✅ Weingut gelöscht:', wineryId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Löschen des Weinguts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt ein Weingut nach ID
+ * @param {string} wineryId - Weingut-ID
+ * @returns {Promise<Object|null>} Weingut-Daten
+ */
+export const getWinery = async (wineryId) => {
+  try {
+    const wineryDoc = await getDoc(doc(db, 'wineries', wineryId));
+    if (!wineryDoc.exists()) {
+      return null;
+    }
+    return { id: wineryDoc.id, ...wineryDoc.data() };
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Weinguts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt ein Weingut nach Owner-ID
+ * @param {string} ownerId - Owner-UID
+ * @returns {Promise<Object|null>} Weingut-Daten
+ */
+export const getWineryByOwner = async (ownerId) => {
+  try {
+    const wineryQuery = query(
+      collection(db, 'wineries'),
+      where('ownerId', '==', ownerId)
+    );
+    const querySnapshot = await getDocs(wineryQuery);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const wineryDoc = querySnapshot.docs[0];
+    return { id: wineryDoc.id, ...wineryDoc.data() };
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Weinguts nach Owner:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt alle verifizierten Weingüter
+ * @returns {Promise<Array>} Liste der Weingüter
+ */
+export const getVerifiedWineries = async () => {
+  try {
+    const wineriesQuery = query(
+      collection(db, 'wineries'),
+      where('isVerified', '==', true)
+    );
+    const querySnapshot = await getDocs(wineriesQuery);
+    
+    const wineries = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // Clientseitig nach Name sortieren (vermeidet Firestore-Index)
+    return wineries.sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen der verifizierten Weingüter:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt alle Weingüter (auch nicht verifizierte) - nur für Admins
+ * @returns {Promise<Array>} Liste der Weingüter
+ */
+export const getAllWineries = async () => {
+  try {
+    const wineriesQuery = query(
+      collection(db, 'wineries'),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(wineriesQuery);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen aller Weingüter:', error);
+    throw error;
+  }
+};
+
+/**
+ * Verifiziert ein Weingut (nur für Admins)
+ * @param {string} wineryId - Weingut-ID
+ * @param {boolean} isVerified - Verifizierungsstatus
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const verifyWinery = async (wineryId, isVerified = true) => {
+  try {
+    await updateWinery(wineryId, { isVerified });
+    console.log(`✅ Weingut ${isVerified ? 'verifiziert' : 'Verifizierung entfernt'}:`, wineryId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Verifizieren des Weinguts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Subscription für verifizierte Weingüter
+ * @param {Function} callback - Callback-Funktion
+ * @returns {Function} Unsubscribe-Funktion
+ */
+export const subscribeVerifiedWineries = (callback) => {
+  try {
+    const wineriesQuery = query(
+      collection(db, 'wineries'),
+      where('isVerified', '==', true)
+    );
+
+    return onSnapshot(wineriesQuery, (snapshot) => {
+      const wineries = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Clientseitig nach Name sortieren (vermeidet Firestore-Index)
+      const sortedWineries = wineries.sort((a, b) => {
+        const nameA = (a.name || '').toLowerCase();
+        const nameB = (b.name || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+      
+      callback(sortedWineries);
+    }, (error) => {
+      console.error('❌ Fehler bei Weingüter-Subscription:', error);
+      callback([]);
+    });
+  } catch (error) {
+    console.error('❌ Fehler beim Einrichten der Weingüter-Subscription:', error);
+    callback([]);
+    return () => {};
+  }
+};
+
+// ===== ADMIN NACHRICHTEN: ZIELGRUPPEN-FILTER =====
+
+/**
+ * Ruft alle aktiven User ab (User, die in den letzten 30 Tagen aktiv waren)
+ * @returns {Promise<Array>} Array von aktiven Usern
+ */
+export const getActiveUsers = async () => {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('lastActive', '>=', thirtyDaysAgo)
+    );
+    const querySnapshot = await getDocs(usersQuery);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      uid: doc.data().uid || doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Error getting active users:', error);
+    // Fallback: Wenn Index fehlt, lade alle User und filtere clientseitig
+    const allUsers = await getAllUsers();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    return allUsers.filter(user => {
+      if (!user.lastActive) return false;
+      const lastActive = user.lastActive.toDate ? user.lastActive.toDate() : new Date(user.lastActive);
+      return lastActive >= thirtyDaysAgo;
+    });
+  }
+};
+
+/**
+ * Ruft alle Premium-User ab (User mit Premium-Abo)
+ * @returns {Promise<Array>} Array von Premium-Usern
+ */
+export const getPremiumUsers = async () => {
+  try {
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('is_subscriber', '==', true)
+    );
+    const querySnapshot = await getDocs(usersQuery);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      uid: doc.data().uid || doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Error getting premium users:', error);
+    // Fallback: Lade alle User und filtere clientseitig
+    const allUsers = await getAllUsers();
+    return allUsers.filter(user => user.is_subscriber === true || user.isSubscriber === true);
+  }
+};
+
+/**
+ * Ruft alle Newsletter-Abonnenten ab (User mit newsletter_optin: true)
+ * @returns {Promise<Array>} Array von Newsletter-Abonnenten
+ */
+export const getNewsletterSubscribers = async () => {
+  try {
+    // Versuche zuerst, User mit newsletter_optin === true zu finden
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('newsletter_optin', '==', true)
+    );
+    const querySnapshot = await getDocs(usersQuery);
+    
+    const subscribers = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      uid: doc.data().uid || doc.id,
+      ...doc.data()
+    }));
+    
+    console.log(`📧 Newsletter-Abonnenten gefunden: ${subscribers.length}`);
+    
+    // Wenn keine Abonnenten gefunden wurden, verwende alle User als Fallback
+    // (für Testzwecke oder wenn das Feld noch nicht gesetzt ist)
+    if (subscribers.length === 0) {
+      console.warn('⚠️ Keine Newsletter-Abonnenten gefunden, verwende alle User als Fallback');
+      const allUsers = await getAllUsers();
+      return allUsers.map(user => ({
+        id: user.id,
+        uid: user.uid || user.id,
+        ...user
+      }));
+    }
+    
+    return subscribers;
+  } catch (error) {
+    console.error('❌ Error getting newsletter subscribers:', error);
+    // Fallback: Lade alle User und filtere clientseitig
+    try {
+      const allUsers = await getAllUsers();
+      const filtered = allUsers.filter(user => 
+        user.newsletter_optin === true || 
+        user.newsletterOptin === true ||
+        user.newsletter === true
+      );
+      
+      if (filtered.length === 0) {
+        console.warn('⚠️ Keine Newsletter-Abonnenten gefunden (auch im Fallback), verwende alle User');
+        return allUsers.map(user => ({
+          id: user.id,
+          uid: user.uid || user.id,
+          ...user
+        }));
+      }
+      
+      return filtered.map(user => ({
+        id: user.id,
+        uid: user.uid || user.id,
+        ...user
+      }));
+    } catch (fallbackError) {
+      console.error('❌ Error in fallback for newsletter subscribers:', fallbackError);
+      // Letzter Fallback: Leeres Array
+      return [];
+    }
+  }
+};
+
+/**
+ * Ruft User basierend auf Zielgruppe ab
+ * @param {string} targetGroup - Zielgruppe: "all" | "active" | "premium" | "newsletter_subscribers"
+ * @returns {Promise<Array>} Array von Usern
+ */
+export const getTargetUsers = async (targetGroup) => {
+  try {
+    switch (targetGroup) {
+      case "all":
+        return await getAllUsers();
+      case "active":
+        return await getActiveUsers();
+      case "premium":
+        return await getPremiumUsers();
+      case "newsletter_subscribers":
+        return await getNewsletterSubscribers();
+      default:
+        console.warn(`⚠️ Unbekannte Zielgruppe: ${targetGroup}, verwende "all"`);
+        return await getAllUsers();
+    }
+  } catch (error) {
+    console.error('❌ Error getting target users:', error);
+    throw error;
+  }
+};
+
+// ===== ADMIN NACHRICHTEN: SURVEYS (UMFRAGEN) =====
+
+/**
+ * Erstellt eine neue Umfrage
+ * @param {Object} surveyData - Umfrage-Daten
+ * @returns {Promise<string>} Survey-ID
+ */
+export const createSurvey = async (surveyData) => {
+  try {
+    const surveyRef = await addDoc(collection(db, 'surveys'), {
+      title: surveyData.title,
+      question: surveyData.question,
+      options: surveyData.options,
+      targetGroup: surveyData.targetGroup || 'all',
+      status: 'active',
+      createdAt: serverTimestamp(),
+      createdBy: surveyData.createdBy || null,
+      expiresAt: surveyData.expiresAt || null,
+      maxResponses: surveyData.maxResponses || null
+    });
+    
+    console.log('✅ Survey created:', surveyRef.id);
+    return surveyRef.id;
+  } catch (error) {
+    console.error('❌ Error creating survey:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft eine Umfrage ab
+ * @param {string} surveyId - Survey-ID
+ * @returns {Promise<Object|null>} Survey-Daten oder null
+ */
+export const getSurvey = async (surveyId) => {
+  try {
+    const surveyDoc = await getDoc(doc(db, 'surveys', surveyId));
+    if (!surveyDoc.exists()) {
+      return null;
+    }
+    return { id: surveyDoc.id, ...surveyDoc.data() };
+  } catch (error) {
+    console.error('❌ Error getting survey:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle Umfragen ab
+ * @returns {Promise<Array>} Array von Umfragen
+ */
+export const getAllSurveys = async () => {
+  try {
+    const surveysQuery = query(
+      collection(db, 'surveys'),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(surveysQuery);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Error getting all surveys:', error);
+    // Fallback: Ohne orderBy
+    const surveysQuery = query(collection(db, 'surveys'));
+    const querySnapshot = await getDocs(surveysQuery);
+    const surveys = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    // Clientseitig sortieren
+    return surveys.sort((a, b) => {
+      const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
+      const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
+      return bTime - aTime;
+    });
+  }
+};
+
+/**
+ * Aktualisiert den Status einer Umfrage
+ * @param {string} surveyId - Survey-ID
+ * @param {string} status - Neuer Status: "active" | "closed" | "draft"
+ * @returns {Promise<void>}
+ */
+export const updateSurveyStatus = async (surveyId, status) => {
+  try {
+    await updateDoc(doc(db, 'surveys', surveyId), {
+      status,
+      updatedAt: serverTimestamp()
+    });
+    console.log('✅ Survey status updated:', surveyId, status);
+  } catch (error) {
+    console.error('❌ Error updating survey status:', error);
+    throw error;
+  }
+};
+
+/**
+ * Prüft, ob ein User bereits an einer Umfrage teilgenommen hat
+ * @param {string} userId - User-ID (uid)
+ * @param {string} surveyId - Survey-ID
+ * @returns {Promise<boolean>} true wenn bereits beantwortet
+ */
+export const hasUserAnsweredSurvey = async (userId, surveyId) => {
+  try {
+    const answersQuery = query(
+      collection(db, 'surveyAnswers', userId, 'answers'),
+      where('surveyId', '==', surveyId),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(answersQuery);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error('❌ Error checking if user answered survey:', error);
+    return false;
+  }
+};
+
+/**
+ * Speichert eine Umfrage-Antwort
+ * @param {string} userId - User-ID (uid)
+ * @param {string} surveyId - Survey-ID
+ * @param {number} selectedOption - Index der gewählten Option
+ * @returns {Promise<string>} Answer-ID
+ */
+export const submitSurveyAnswer = async (userId, surveyId, selectedOption) => {
+  try {
+    console.log('🔄 Submitting survey answer:', { userId, surveyId, selectedOption });
+    
+    // Prüfe, ob User bereits geantwortet hat
+    const alreadyAnswered = await hasUserAnsweredSurvey(userId, surveyId);
+    if (alreadyAnswered) {
+      throw new Error('User hat bereits an dieser Umfrage teilgenommen');
+    }
+    
+    // Speichere Antwort
+    const answerRef = await addDoc(collection(db, 'surveyAnswers', userId, 'answers'), {
+      surveyId,
+      selectedOption,
+      answeredAt: serverTimestamp()
+    });
+    
+    console.log('✅ Survey answer saved:', answerRef.id);
+    
+    console.log('✅ Survey answer submitted:', answerRef.id);
+    return answerRef.id;
+  } catch (error) {
+    console.error('❌ Error submitting survey answer:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle Antworten zu einer Umfrage ab
+ * @param {string} surveyId - Survey-ID
+ * @returns {Promise<Array>} Array von Antworten
+ */
+export const getSurveyAnswers = async (surveyId) => {
+  try {
+    // Hole alle User
+    const allUsers = await getAllUsers();
+    const allAnswers = [];
+    
+    // Durchsuche alle User nach Antworten
+    for (const user of allUsers) {
+      const userId = user.uid || user.id;
+      try {
+        const answersQuery = query(
+          collection(db, 'surveyAnswers', userId, 'answers'),
+          where('surveyId', '==', surveyId)
+        );
+        const querySnapshot = await getDocs(answersQuery);
+        
+        querySnapshot.docs.forEach(doc => {
+          allAnswers.push({
+            id: doc.id,
+            userId,
+            ...doc.data()
+          });
+        });
+      } catch (error) {
+        // Ignoriere Fehler bei einzelnen Usern
+        console.warn(`⚠️ Fehler beim Laden von Antworten für User ${userId}:`, error);
+      }
+    }
+    
+    return allAnswers;
+  } catch (error) {
+    console.error('❌ Error getting survey answers:', error);
+    throw error;
+  }
+};
+
+// ===== ADMIN NACHRICHTEN: NEWSLETTER =====
+
+/**
+ * Erstellt einen neuen Newsletter
+ * @param {Object} newsletterData - Newsletter-Daten
+ * @returns {Promise<string>} Newsletter-ID
+ */
+export const createNewsletter = async (newsletterData) => {
+  try {
+    const newsletterRef = await addDoc(collection(db, 'newsletters'), {
+      title: newsletterData.title,
+      content: newsletterData.content,
+      targetGroup: newsletterData.targetGroup || 'newsletter_subscribers',
+      status: 'draft',
+      createdAt: serverTimestamp(),
+      createdBy: newsletterData.createdBy || null,
+      sentAt: null
+    });
+    
+    console.log('✅ Newsletter created:', newsletterRef.id);
+    return newsletterRef.id;
+  } catch (error) {
+    console.error('❌ Error creating newsletter:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft einen Newsletter ab
+ * @param {string} newsletterId - Newsletter-ID
+ * @returns {Promise<Object|null>} Newsletter-Daten oder null
+ */
+export const getNewsletter = async (newsletterId) => {
+  try {
+    const newsletterDoc = await getDoc(doc(db, 'newsletters', newsletterId));
+    if (!newsletterDoc.exists()) {
+      return null;
+    }
+    return { id: newsletterDoc.id, ...newsletterDoc.data() };
+  } catch (error) {
+    console.error('❌ Error getting newsletter:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle Newsletter ab
+ * @returns {Promise<Array>} Array von Newslettern
+ */
+export const getAllNewsletters = async () => {
+  try {
+    const newslettersQuery = query(
+      collection(db, 'newsletters'),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(newslettersQuery);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Error getting all newsletters:', error);
+    // Fallback: Ohne orderBy
+    const newslettersQuery = query(collection(db, 'newsletters'));
+    const querySnapshot = await getDocs(newslettersQuery);
+    const newsletters = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    // Clientseitig sortieren
+    return newsletters.sort((a, b) => {
+      const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
+      const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
+      return bTime - aTime;
+    });
+  }
+};
+
+/**
+ * Aktualisiert den Status eines Newsletters
+ * @param {string} newsletterId - Newsletter-ID
+ * @param {string} status - Neuer Status: "draft" | "sent"
+ * @returns {Promise<void>}
+ */
+export const updateNewsletterStatus = async (newsletterId, status) => {
+  try {
+    await updateDoc(doc(db, 'newsletters', newsletterId), {
+      status,
+      sentAt: status === 'sent' ? serverTimestamp() : null,
+      updatedAt: serverTimestamp()
+    });
+    console.log('✅ Newsletter status updated:', newsletterId, status);
+  } catch (error) {
+    console.error('❌ Error updating newsletter status:', error);
+    throw error;
+  }
+};
+
+// ===== ADMIN NACHRICHTEN: SYSTEM MESSAGES =====
+
+/**
+ * Erstellt eine neue System-Ankündigung
+ * @param {Object} messageData - System-Message-Daten
+ * @returns {Promise<string>} SystemMessage-ID
+ */
+export const createSystemMessage = async (messageData) => {
+  try {
+    const messageRef = await addDoc(collection(db, 'systemMessages'), {
+      title: messageData.title,
+      content: messageData.content,
+      priority: messageData.priority || 'normal',
+      targetGroup: messageData.targetGroup || 'all',
+      status: 'draft',
+      createdAt: serverTimestamp(),
+      createdBy: messageData.createdBy || null,
+      sentAt: null
+    });
+    
+    console.log('✅ System message created:', messageRef.id);
+    return messageRef.id;
+  } catch (error) {
+    console.error('❌ Error creating system message:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft eine System-Ankündigung ab
+ * @param {string} messageId - SystemMessage-ID
+ * @returns {Promise<Object|null>} SystemMessage-Daten oder null
+ */
+export const getSystemMessage = async (messageId) => {
+  try {
+    const messageDoc = await getDoc(doc(db, 'systemMessages', messageId));
+    if (!messageDoc.exists()) {
+      return null;
+    }
+    return { id: messageDoc.id, ...messageDoc.data() };
+  } catch (error) {
+    console.error('❌ Error getting system message:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle System-Ankündigungen ab
+ * @returns {Promise<Array>} Array von System-Ankündigungen
+ */
+export const getAllSystemMessages = async () => {
+  try {
+    const messagesQuery = query(
+      collection(db, 'systemMessages'),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(messagesQuery);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Error getting all system messages:', error);
+    // Fallback: Ohne orderBy
+    const messagesQuery = query(collection(db, 'systemMessages'));
+    const querySnapshot = await getDocs(messagesQuery);
+    const messages = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    // Clientseitig sortieren
+    return messages.sort((a, b) => {
+      const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
+      const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
+      return bTime - aTime;
+    });
+  }
+};
+
+/**
+ * Aktualisiert den Status einer System-Ankündigung
+ * @param {string} messageId - SystemMessage-ID
+ * @param {string} status - Neuer Status: "draft" | "sent"
+ * @returns {Promise<void>}
+ */
+export const updateSystemMessageStatus = async (messageId, status) => {
+  try {
+    await updateDoc(doc(db, 'systemMessages', messageId), {
+      status,
+      sentAt: status === 'sent' ? serverTimestamp() : null,
+      updatedAt: serverTimestamp()
+    });
+    console.log('✅ System message status updated:', messageId, status);
+  } catch (error) {
+    console.error('❌ Error updating system message status:', error);
+    throw error;
+  }
+};
+
+// ===== ADMIN NACHRICHTEN: NOTIFICATION-ERSTELLUNG FÜR ZIELGRUPPEN =====
+
+/**
+ * Erstellt Notifications für alle Ziel-User einer Umfrage
+ * @param {string} surveyId - Survey-ID
+ * @param {string} targetGroup - Zielgruppe
+ * @returns {Promise<number>} Anzahl erstellter Notifications
+ */
+export const createNotificationsForSurvey = async (surveyId, targetGroup) => {
+  try {
+    const survey = await getSurvey(surveyId);
+    if (!survey) {
+      throw new Error('Survey nicht gefunden');
+    }
+    
+    const targetUsers = await getTargetUsers(targetGroup);
+    console.log(`📊 Erstelle Notifications für ${targetUsers.length} User (Survey: ${surveyId})`);
+    
+    // Batch-Processing für große Zielgruppen (500 pro Batch)
+    const batchSize = 500;
+    let notificationCount = 0;
+    
+    for (let i = 0; i < targetUsers.length; i += batchSize) {
+      const batch = writeBatch(db);
+      const batchUsers = targetUsers.slice(i, i + batchSize);
+      
+      for (const user of batchUsers) {
+        const userId = user.uid || user.id;
+        if (!userId) continue;
+        
+        try {
+          const notificationRef = doc(collection(db, 'users', userId, 'notifications'));
+          batch.set(notificationRef, {
+            type: 'survey',
+            title: survey.title,
+            message: survey.question || 'Neue Umfrage verfügbar',
+            surveyId: surveyId,
+            isRead: false,
+            isArchived: false,
+            isCompleted: false,
+            createdAt: serverTimestamp()
+          });
+          notificationCount++;
+        } catch (error) {
+          console.error(`❌ Fehler beim Erstellen der Notification für User ${userId}:`, error);
+        }
+      }
+      
+      await batch.commit();
+      console.log(`✅ Batch ${Math.floor(i / batchSize) + 1} abgeschlossen (${notificationCount} Notifications)`);
+    }
+    
+    console.log(`✅ ${notificationCount} Notifications für Survey ${surveyId} erstellt`);
+    return notificationCount;
+  } catch (error) {
+    console.error('❌ Error creating notifications for survey:', error);
+    throw error;
+  }
+};
+
+/**
+ * Erstellt Notifications für alle Ziel-User eines Newsletters
+ * @param {string} newsletterId - Newsletter-ID
+ * @param {string} targetGroup - Zielgruppe
+ * @returns {Promise<number>} Anzahl erstellter Notifications
+ */
+export const createNotificationsForNewsletter = async (newsletterId, targetGroup) => {
+  try {
+    const newsletter = await getNewsletter(newsletterId);
+    if (!newsletter) {
+      throw new Error('Newsletter nicht gefunden');
+    }
+    
+    console.log(`📧 Newsletter-Daten:`, {
+      id: newsletterId,
+      title: newsletter.title,
+      targetGroup
+    });
+    
+    const targetUsers = await getTargetUsers(targetGroup);
+    console.log(`📧 Erstelle Notifications für ${targetUsers.length} User (Newsletter: ${newsletterId})`);
+    
+    if (targetUsers.length === 0) {
+      console.warn('⚠️ Keine Ziel-User gefunden für Newsletter:', newsletterId);
+      return 0;
+    }
+    
+    // Batch-Processing für große Zielgruppen (500 pro Batch)
+    const batchSize = 500;
+    let notificationCount = 0;
+    let errorCount = 0;
+    
+    for (let i = 0; i < targetUsers.length; i += batchSize) {
+      const batch = writeBatch(db);
+      const batchUsers = targetUsers.slice(i, i + batchSize);
+      let batchNotificationCount = 0;
+      
+      for (const user of batchUsers) {
+        const userId = user.uid || user.id;
+        if (!userId) {
+          console.warn('⚠️ User ohne uid/id gefunden:', user);
+          continue;
+        }
+        
+        try {
+          // Erstelle eine neue Dokument-Referenz mit automatischer ID
+          const notificationRef = doc(collection(db, 'users', userId, 'notifications'));
+          batch.set(notificationRef, {
+            type: 'newsletter',
+            title: newsletter.title,
+            message: newsletter.content.substring(0, 100) + (newsletter.content.length > 100 ? '...' : ''),
+            newsletterId: newsletterId,
+            isRead: false,
+            isArchived: false,
+            isCompleted: false,
+            createdAt: serverTimestamp()
+          });
+          notificationCount++;
+          batchNotificationCount++;
+        } catch (error) {
+          console.error(`❌ Fehler beim Erstellen der Notification für User ${userId}:`, error);
+          errorCount++;
+        }
+      }
+      
+      if (batchNotificationCount > 0) {
+        try {
+          await batch.commit();
+          console.log(`✅ Batch ${Math.floor(i / batchSize) + 1} abgeschlossen (${batchNotificationCount} Notifications)`);
+        } catch (batchError) {
+          console.error(`❌ Fehler beim Commit des Batches ${Math.floor(i / batchSize) + 1}:`, batchError);
+          errorCount += batchNotificationCount;
+        }
+      }
+    }
+    
+    console.log(`✅ ${notificationCount} Notifications für Newsletter ${newsletterId} erstellt (${errorCount} Fehler)`);
+    return notificationCount;
+  } catch (error) {
+    console.error('❌ Error creating notifications for newsletter:', error);
+    throw error;
+  }
+};
+
+/**
+ * Erstellt Notifications für alle Ziel-User einer System-Ankündigung
+ * @param {string} messageId - SystemMessage-ID
+ * @param {string} targetGroup - Zielgruppe
+ * @returns {Promise<number>} Anzahl erstellter Notifications
+ */
+export const createNotificationsForSystemMessage = async (messageId, targetGroup) => {
+  try {
+    const systemMessage = await getSystemMessage(messageId);
+    if (!systemMessage) {
+      throw new Error('System-Ankündigung nicht gefunden');
+    }
+    
+    const targetUsers = await getTargetUsers(targetGroup);
+    console.log(`📢 Erstelle Notifications für ${targetUsers.length} User (SystemMessage: ${messageId})`);
+    
+    // Batch-Processing für große Zielgruppen (500 pro Batch)
+    const batchSize = 500;
+    let notificationCount = 0;
+    
+    for (let i = 0; i < targetUsers.length; i += batchSize) {
+      const batch = writeBatch(db);
+      const batchUsers = targetUsers.slice(i, i + batchSize);
+      
+      for (const user of batchUsers) {
+        const userId = user.uid || user.id;
+        if (!userId) continue;
+        
+        try {
+          const notificationRef = doc(collection(db, 'users', userId, 'notifications'));
+          batch.set(notificationRef, {
+            type: 'system',
+            title: systemMessage.title,
+            message: systemMessage.content.substring(0, 100) + (systemMessage.content.length > 100 ? '...' : ''),
+            systemMessageId: messageId,
+            priority: systemMessage.priority || 'normal',
+            isRead: false,
+            isArchived: false,
+            isCompleted: false,
+            createdAt: serverTimestamp()
+          });
+          notificationCount++;
+        } catch (error) {
+          console.error(`❌ Fehler beim Erstellen der Notification für User ${userId}:`, error);
+        }
+      }
+      
+      await batch.commit();
+      console.log(`✅ Batch ${Math.floor(i / batchSize) + 1} abgeschlossen (${notificationCount} Notifications)`);
+    }
+    
+    console.log(`✅ ${notificationCount} Notifications für SystemMessage ${messageId} erstellt`);
+    return notificationCount;
+  } catch (error) {
+    console.error('❌ Error creating notifications for system message:', error);
+    throw error;
+  }
+};
+
+// ===== SHOP PRODUCTS =====
+
+/**
+ * Erstellt ein neues Produkt im Shop
+ * @param {Object} productData - Produktdaten
+ * @returns {Promise<string>} Produkt-ID
+ */
+export const createProduct = async (productData) => {
+  try {
+    // Validierung
+    if (!productData.name || !productData.name.trim()) {
+      throw new Error('Produktname ist erforderlich');
+    }
+    if (!productData.category) {
+      throw new Error('Kategorie ist erforderlich');
+    }
+    if (typeof productData.price !== 'number' || productData.price < 0) {
+      throw new Error('Gültiger Preis ist erforderlich');
+    }
+    if (!productData.size || !['small', 'medium', 'large', 'xlarge'].includes(productData.size)) {
+      throw new Error('Gültige Größe ist erforderlich (small, medium, large, xlarge)');
+    }
+
+    // Berechne Bruttopreis (MwSt 19%)
+    const priceGross = productData.price * 1.19;
+    const taxRate = 19;
+
+    // Erstelle Produkt-Dokument
+    const productRef = await addDoc(collection(db, 'products'), {
+      name: productData.name.trim(),
+      description: productData.description || '',
+      category: productData.category,
+      price: productData.price,
+      priceGross: Math.round(priceGross * 100) / 100, // Auf 2 Dezimalstellen runden
+      taxRate: taxRate,
+      images: productData.images || [],
+      variants: productData.variants || [],
+      stock: productData.stock !== undefined ? productData.stock : null,
+      active: productData.active !== undefined ? productData.active : true,
+      size: productData.size,
+      shippingCost: productData.shippingCost || 0,
+      tags: productData.tags || [],
+      sku: productData.sku || null,
+      createdBy: productData.createdBy || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Produkt erstellt:', productRef.id);
+    return productRef.id;
+  } catch (error) {
+    console.error('❌ Fehler beim Erstellen des Produkts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft ein Produkt ab
+ * @param {string} productId - Produkt-ID
+ * @returns {Promise<Object>} Produkt-Daten
+ */
+export const getProduct = async (productId) => {
+  try {
+    const productRef = doc(db, 'products', productId);
+    const productSnap = await getDoc(productRef);
+
+    if (!productSnap.exists()) {
+      throw new Error('Produkt nicht gefunden');
+    }
+
+    return {
+      id: productSnap.id,
+      ...productSnap.data()
+    };
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Produkts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle aktiven Produkte ab
+ * @returns {Promise<Array>} Array von Produkten
+ */
+export const getActiveProducts = async () => {
+  try {
+    const productsQuery = query(
+      collection(db, 'products'),
+      where('active', '==', true)
+    );
+    const snapshot = await getDocs(productsQuery);
+
+    const products = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Client-seitige Sortierung nach createdAt (neueste zuerst)
+    return products.sort((a, b) => {
+      const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
+      const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
+      return dateB - dateA;
+    });
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen der aktiven Produkte:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft Produkte nach Kategorie ab
+ * @param {string} category - Kategorie (weinglaeser, oeffner, kuehler, geschenkboxen, sonstiges)
+ * @returns {Promise<Array>} Array von Produkten
+ */
+export const getProductsByCategory = async (category) => {
+  try {
+    const productsQuery = query(
+      collection(db, 'products'),
+      where('active', '==', true),
+      where('category', '==', category)
+    );
+    const snapshot = await getDocs(productsQuery);
+
+    const products = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Client-seitige Sortierung nach createdAt (neueste zuerst)
+    return products.sort((a, b) => {
+      const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
+      const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
+      return dateB - dateA;
+    });
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen der Produkte nach Kategorie:', error);
+    throw error;
+  }
+};
+
+/**
+ * Sucht Produkte nach Suchbegriff
+ * @param {string} searchQuery - Suchbegriff
+ * @returns {Promise<Array>} Array von Produkten
+ */
+export const searchProducts = async (searchQuery) => {
+  try {
+    // Lade alle aktiven Produkte (client-seitige Suche)
+    const allProducts = await getActiveProducts();
+    
+    if (!searchQuery || !searchQuery.trim()) {
+      return allProducts;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    
+    return allProducts.filter(product => {
+      const name = product.name?.toLowerCase() || '';
+      const description = product.description?.toLowerCase() || '';
+      const category = product.category?.toLowerCase() || '';
+      const tags = product.tags?.join(' ').toLowerCase() || '';
+      const sku = product.sku?.toLowerCase() || '';
+
+      return name.includes(query) ||
+             description.includes(query) ||
+             category.includes(query) ||
+             tags.includes(query) ||
+             sku.includes(query);
+    });
+  } catch (error) {
+    console.error('❌ Fehler bei der Produktsuche:', error);
+    throw error;
+  }
+};
+
+/**
+ * Aktualisiert ein Produkt
+ * @param {string} productId - Produkt-ID
+ * @param {Object} updates - Zu aktualisierende Felder
+ * @returns {Promise<void>}
+ */
+export const updateProduct = async (productId, updates) => {
+  try {
+    const productRef = doc(db, 'products', productId);
+    
+    // Wenn Preis aktualisiert wird, berechne Bruttopreis neu
+    if (updates.price !== undefined) {
+      updates.priceGross = Math.round(updates.price * 1.19 * 100) / 100;
+    }
+
+    await updateDoc(productRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Produkt aktualisiert:', productId);
+  } catch (error) {
+    console.error('❌ Fehler beim Aktualisieren des Produkts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Löscht ein Produkt (soft delete: active = false)
+ * @param {string} productId - Produkt-ID
+ * @returns {Promise<void>}
+ */
+export const deleteProduct = async (productId) => {
+  try {
+    await updateProduct(productId, { active: false });
+    console.log('✅ Produkt deaktiviert:', productId);
+  } catch (error) {
+    console.error('❌ Fehler beim Löschen des Produkts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Lädt Produkt-Bilder zu Firebase Storage hoch
+ * @param {string} productId - Produkt-ID
+ * @param {Array<string>} imageUris - Array von Bild-URIs
+ * @returns {Promise<Array<string>>} Array von Download-URLs
+ */
+export const uploadProductImages = async (productId, imageUris) => {
+  try {
+    if (!imageUris || imageUris.length === 0) {
+      return [];
+    }
+
+    if (imageUris.length > 5) {
+      throw new Error('Maximal 5 Bilder pro Produkt erlaubt');
+    }
+
+    const uploadPromises = imageUris.map(async (imageUri, index) => {
+      const fileName = `product_${productId}_${index}_${Date.now()}.jpg`;
+      return await uploadImageToStorage(imageUri, 'products', fileName);
+    });
+
+    const imageUrls = await Promise.all(uploadPromises);
+    console.log('✅ Produkt-Bilder hochgeladen:', imageUrls.length);
+    return imageUrls;
+  } catch (error) {
+    console.error('❌ Fehler beim Hochladen der Produkt-Bilder:', error);
+    throw error;
+  }
+};
+
+/**
+ * Abonniert Änderungen an aktiven Produkten
+ * @param {Function} callback - Callback-Funktion für Updates
+ * @returns {Function} Unsubscribe-Funktion
+ */
+export const subscribeActiveProducts = (callback) => {
+  try {
+    const productsQuery = query(
+      collection(db, 'products'),
+      where('active', '==', true)
+    );
+
+    return onSnapshot(productsQuery, (snapshot) => {
+      const products = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Client-seitige Sortierung nach createdAt (neueste zuerst)
+      const sortedProducts = products.sort((a, b) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
+        const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
+        return dateB - dateA;
+      });
+      
+      callback(sortedProducts);
+    });
+  } catch (error) {
+    console.error('❌ Fehler bei der Produkt-Subscription:', error);
+    throw error;
+  }
+};
+
+// ===== WARENKORB =====
+
+/**
+ * Fügt ein Produkt zum Warenkorb hinzu
+ * @param {string} userId - User-ID
+ * @param {string} productId - Produkt-ID
+ * @param {number} quantity - Menge (Standard: 1)
+ * @param {string} variantId - Optional: Varianten-ID
+ * @returns {Promise<void>}
+ */
+export const addToCart = async (userId, productId, quantity = 1, variantId = null) => {
+  try {
+    if (!userId || !productId) {
+      throw new Error('User-ID und Produkt-ID sind erforderlich');
+    }
+
+    if (quantity < 1 || quantity > 10) {
+      throw new Error('Menge muss zwischen 1 und 10 liegen');
+    }
+
+    // Prüfe, ob Artikel bereits im Warenkorb
+    const cartItemsRef = collection(db, 'cart', userId, 'items');
+    const existingItemQuery = query(
+      cartItemsRef,
+      where('productId', '==', productId),
+      where('variantId', '==', variantId || null)
+    );
+    const existingItemSnapshot = await getDocs(existingItemQuery);
+
+    if (!existingItemSnapshot.empty) {
+      // Artikel existiert bereits - erhöhe Menge
+      const existingItem = existingItemSnapshot.docs[0];
+      const currentQuantity = existingItem.data().quantity || 0;
+      const newQuantity = Math.min(currentQuantity + quantity, 10); // Max 10
+
+      await updateDoc(existingItem.ref, {
+        quantity: newQuantity,
+        updatedAt: serverTimestamp()
+      });
+      console.log('✅ Warenkorb-Artikel-Menge aktualisiert:', productId);
+    } else {
+      // Neuer Artikel - hole Produkt-Daten für Preis
+      const product = await getProduct(productId);
+      let itemPrice = product.price;
+      
+      // Wenn Variante gewählt wurde, hole Varianten-Preis
+      if (variantId && product.variants) {
+        const variant = product.variants.find(v => v.id === variantId);
+        if (variant && variant.price) {
+          itemPrice = variant.price;
+        }
+      }
+
+      // Erstelle neuen Warenkorb-Eintrag
+      await addDoc(cartItemsRef, {
+        productId: productId,
+        variantId: variantId || null,
+        quantity: quantity,
+        priceAtTime: itemPrice, // Preis zum Zeitpunkt des Hinzufügens
+        addedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      console.log('✅ Artikel zum Warenkorb hinzugefügt:', productId);
+    }
+  } catch (error) {
+    console.error('❌ Fehler beim Hinzufügen zum Warenkorb:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft den Warenkorb eines Users ab
+ * @param {string} userId - User-ID
+ * @returns {Promise<Array>} Array von Warenkorb-Items mit Produkt-Details
+ */
+export const getCart = async (userId) => {
+  try {
+    if (!userId) {
+      return [];
+    }
+
+    const cartItemsRef = collection(db, 'cart', userId, 'items');
+    const snapshot = await getDocs(cartItemsRef);
+
+    // Lade Produkt-Details für jedes Item
+    const cartItems = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const itemData = doc.data();
+        try {
+          const product = await getProduct(itemData.productId);
+          return {
+            id: doc.id,
+            ...itemData,
+            product: product
+          };
+        } catch (error) {
+          console.error(`❌ Fehler beim Laden des Produkts ${itemData.productId}:`, error);
+          return {
+            id: doc.id,
+            ...itemData,
+            product: null // Produkt nicht gefunden
+          };
+        }
+      })
+    );
+
+    // Filtere Items mit nicht gefundenen Produkten heraus
+    return cartItems.filter(item => item.product !== null);
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Warenkorbs:', error);
+    throw error;
+  }
+};
+
+/**
+ * Aktualisiert die Menge eines Warenkorb-Items
+ * @param {string} userId - User-ID
+ * @param {string} itemId - Warenkorb-Item-ID
+ * @param {number} quantity - Neue Menge (0 = entfernen)
+ * @returns {Promise<void>}
+ */
+export const updateCartItemQuantity = async (userId, itemId, quantity) => {
+  try {
+    if (quantity < 0 || quantity > 10) {
+      throw new Error('Menge muss zwischen 0 und 10 liegen');
+    }
+
+    const itemRef = doc(db, 'cart', userId, 'items', itemId);
+
+    if (quantity === 0) {
+      // Entferne Item
+      await deleteDoc(itemRef);
+      console.log('✅ Warenkorb-Item entfernt:', itemId);
+    } else {
+      // Aktualisiere Menge
+      await updateDoc(itemRef, {
+        quantity: quantity,
+        updatedAt: serverTimestamp()
+      });
+      console.log('✅ Warenkorb-Item-Menge aktualisiert:', itemId);
+    }
+  } catch (error) {
+    console.error('❌ Fehler beim Aktualisieren der Warenkorb-Item-Menge:', error);
+    throw error;
+  }
+};
+
+/**
+ * Entfernt ein Item aus dem Warenkorb
+ * @param {string} userId - User-ID
+ * @param {string} itemId - Warenkorb-Item-ID
+ * @returns {Promise<void>}
+ */
+export const removeFromCart = async (userId, itemId) => {
+  try {
+    await updateCartItemQuantity(userId, itemId, 0);
+  } catch (error) {
+    console.error('❌ Fehler beim Entfernen aus dem Warenkorb:', error);
+    throw error;
+  }
+};
+
+/**
+ * Leert den Warenkorb eines Users
+ * @param {string} userId - User-ID
+ * @returns {Promise<void>}
+ */
+export const clearCart = async (userId) => {
+  try {
+    const cartItemsRef = collection(db, 'cart', userId, 'items');
+    const snapshot = await getDocs(cartItemsRef);
+
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+    console.log('✅ Warenkorb geleert:', userId);
+  } catch (error) {
+    console.error('❌ Fehler beim Leeren des Warenkorbs:', error);
+    throw error;
+  }
+};
+
+/**
+ * Abonniert Änderungen am Warenkorb eines Users
+ * @param {string} userId - User-ID
+ * @param {Function} callback - Callback-Funktion für Updates
+ * @returns {Function} Unsubscribe-Funktion
+ */
+export const subscribeCart = (userId, callback) => {
+  try {
+    if (!userId) {
+      return () => {}; // Leere Unsubscribe-Funktion
+    }
+
+    const cartItemsRef = collection(db, 'cart', userId, 'items');
+    return onSnapshot(cartItemsRef, async (snapshot) => {
+      // Lade Produkt-Details für jedes Item
+      const cartItems = await Promise.all(
+        snapshot.docs.map(async (doc) => {
+          const itemData = doc.data();
+          try {
+            const product = await getProduct(itemData.productId);
+            return {
+              id: doc.id,
+              ...itemData,
+              product: product
+            };
+          } catch (error) {
+            return {
+              id: doc.id,
+              ...itemData,
+              product: null
+            };
+          }
+        })
+      );
+
+      // Filtere Items mit nicht gefundenen Produkten heraus
+      const validItems = cartItems.filter(item => item.product !== null);
+      callback(validItems);
+    });
+  } catch (error) {
+    console.error('❌ Fehler bei der Warenkorb-Subscription:', error);
+    throw error;
+  }
+};
+
+// ===== BESTELLUNGEN =====
+
+/**
+ * Berechnet Versandkosten basierend auf Produkt-Größen
+ * @param {Array} cartItems - Warenkorb-Items mit Produkt-Daten
+ * @param {number} subtotal - Zwischensumme (Brutto)
+ * @returns {number} Versandkosten
+ */
+export const calculateShippingCost = (cartItems, subtotal) => {
+  try {
+    // Versandkostenfrei ab 100€
+    if (subtotal >= 100) {
+      return 0;
+    }
+
+    // Finde höchste Versandkosten aus allen Produkten
+    let maxShippingCost = 0;
+    cartItems.forEach(item => {
+      const product = item.product;
+      if (product && product.shippingCost) {
+        maxShippingCost = Math.max(maxShippingCost, product.shippingCost);
+      }
+    });
+
+    return maxShippingCost;
+  } catch (error) {
+    console.error('❌ Fehler bei der Versandkosten-Berechnung:', error);
+    return 0;
+  }
+};
+
+/**
+ * Erstellt eine neue Bestellung
+ * @param {Object} orderData - Bestelldaten
+ * @returns {Promise<string>} Bestell-ID
+ */
+export const createOrder = async (orderData) => {
+  try {
+    if (!orderData.userId) {
+      throw new Error('User-ID ist erforderlich');
+    }
+    if (!orderData.items || orderData.items.length === 0) {
+      throw new Error('Bestellung muss mindestens ein Item enthalten');
+    }
+
+    // Berechne Preise
+    let subtotal = 0; // Netto
+    const items = [];
+
+    for (const item of orderData.items) {
+      const product = item.product;
+      const quantity = item.quantity;
+      let itemPrice = item.priceAtTime || product.price;
+
+      // Wenn Variante, hole Varianten-Preis
+      if (item.variantId && product.variants) {
+        const variant = product.variants.find(v => v.id === item.variantId);
+        if (variant && variant.price) {
+          itemPrice = variant.price;
+        }
+      }
+
+      const itemSubtotal = itemPrice * quantity;
+      subtotal += itemSubtotal;
+
+      items.push({
+        productId: product.id,
+        variantId: item.variantId || null,
+        name: product.name,
+        variantName: item.variantId ? product.variants?.find(v => v.id === item.variantId)?.name : null,
+        quantity: quantity,
+        price: itemPrice, // Netto
+        priceGross: Math.round(itemPrice * 1.19 * 100) / 100 // Brutto
+      });
+    }
+
+    // Berechne MwSt (19%)
+    const tax = Math.round(subtotal * 0.19 * 100) / 100;
+
+    // Berechne Versandkosten
+    const shippingCost = calculateShippingCost(orderData.items, subtotal + tax);
+    const shippingCostFree = (subtotal + tax) >= 100;
+
+    // Gesamtpreis (Brutto + Versand)
+    const total = Math.round((subtotal + tax + shippingCost) * 100) / 100;
+
+    // Erstelle Bestellung
+    const orderRef = await addDoc(collection(db, 'orders'), {
+      userId: orderData.userId,
+      items: items,
+      subtotal: Math.round(subtotal * 100) / 100, // Netto
+      tax: tax, // MwSt
+      shippingCost: shippingCost,
+      shippingCostFree: shippingCostFree,
+      total: total, // Brutto + Versand
+      status: 'pending',
+      paymentMethod: orderData.paymentMethod || 'paypal',
+      paymentId: null, // Wird nach PayPal-Zahlung gesetzt
+      shippingAddress: orderData.shippingAddress || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    // Reduziere Lagerbestand
+    for (const item of orderData.items) {
+      const product = item.product;
+      if (product.stock !== null && product.stock !== undefined) {
+        const newStock = Math.max(0, product.stock - item.quantity);
+        await updateProduct(product.id, { stock: newStock });
+
+        // Wenn Variante, reduziere auch Varianten-Lagerbestand
+        if (item.variantId && product.variants) {
+          const variantIndex = product.variants.findIndex(v => v.id === item.variantId);
+          if (variantIndex !== -1 && product.variants[variantIndex].stock !== null) {
+            const variantStock = product.variants[variantIndex].stock;
+            const newVariantStock = Math.max(0, variantStock - item.quantity);
+            product.variants[variantIndex].stock = newVariantStock;
+            await updateProduct(product.id, { variants: product.variants });
+          }
+        }
+      }
+    }
+
+    // Leere Warenkorb
+    await clearCart(orderData.userId);
+
+    console.log('✅ Bestellung erstellt:', orderRef.id);
+    return orderRef.id;
+  } catch (error) {
+    console.error('❌ Fehler beim Erstellen der Bestellung:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft eine Bestellung ab
+ * @param {string} orderId - Bestell-ID
+ * @returns {Promise<Object>} Bestell-Daten
+ */
+export const getOrder = async (orderId) => {
+  try {
+    const orderRef = doc(db, 'orders', orderId);
+    const orderSnap = await getDoc(orderRef);
+
+    if (!orderSnap.exists()) {
+      throw new Error('Bestellung nicht gefunden');
+    }
+
+    return {
+      id: orderSnap.id,
+      ...orderSnap.data()
+    };
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen der Bestellung:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle Bestellungen eines Users ab
+ * @param {string} userId - User-ID
+ * @returns {Promise<Array>} Array von Bestellungen
+ */
+export const getUserOrders = async (userId) => {
+  try {
+    // WICHTIG: Firestore benötigt einen Composite Index für where + orderBy
+    // Falls Index fehlt, verwende Fallback: Filter im Code
+    let ordersQuery;
+    try {
+      // Versuche Query mit orderBy (benötigt Index)
+      ordersQuery = query(
+        collection(db, 'orders'),
+        where('userId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(ordersQuery);
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (indexError) {
+      // Fallback: Query ohne orderBy, dann im Code sortieren
+      if (indexError.message && indexError.message.includes('index')) {
+        console.warn('⚠️ Firestore Index fehlt, verwende Fallback (Sortierung im Code)');
+        console.warn('💡 Erstelle den Index hier:', indexError.message.match(/https:\/\/[^\s]+/)?.[0] || 'Firebase Console');
+        
+        // Query ohne orderBy
+        ordersQuery = query(
+          collection(db, 'orders'),
+          where('userId', '==', userId)
+        );
+        const snapshot = await getDocs(ordersQuery);
+        
+        // Sortiere im Code
+        const orders = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        // Sortiere nach createdAt (neueste zuerst)
+        orders.sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+          const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+          return bTime - aTime; // Descending
+        });
+        
+        return orders;
+      } else {
+        // Anderer Fehler, weiterwerfen
+        throw indexError;
+      }
+    }
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen der User-Bestellungen:', error);
+    throw error;
+  }
+};
+
+/**
+ * Ruft alle Bestellungen ab (Admin)
+ * @returns {Promise<Array>} Array von Bestellungen
+ */
+export const getAllOrders = async () => {
+  try {
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      orderBy('createdAt', 'desc')
+    );
+    const snapshot = await getDocs(ordersQuery);
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen aller Bestellungen:', error);
+    throw error;
+  }
+};
+
+/**
+ * Aktualisiert den Status einer Bestellung
+ * @param {string} orderId - Bestell-ID
+ * @param {string} status - Neuer Status (pending, paid, shipped, delivered, cancelled)
+ * @param {string} paymentId - Optional: PayPal Transaction ID
+ * @returns {Promise<void>}
+ */
+export const updateOrderStatus = async (orderId, status, paymentId = null) => {
+  try {
+    const validStatuses = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      throw new Error(`Ungültiger Status: ${status}`);
+    }
+
+    const updates = {
+      status: status,
+      updatedAt: serverTimestamp()
+    };
+
+    if (paymentId) {
+      updates.paymentId = paymentId;
+    }
+
+    const orderRef = doc(db, 'orders', orderId);
+    await updateDoc(orderRef, updates);
+
+    console.log('✅ Bestell-Status aktualisiert:', orderId, status);
+  } catch (error) {
+    console.error('❌ Fehler beim Aktualisieren des Bestell-Status:', error);
+    throw error;
+  }
+};
+
+/**
+ * Löscht eine Bestellung
+ * @param {string} orderId - Bestell-ID
+ * @param {string} userId - User-ID (zur Sicherheit: nur der Besitzer kann löschen)
+ * @returns {Promise<void>}
+ */
+export const deleteOrder = async (orderId, userId) => {
+  try {
+    // Prüfe, ob Bestellung existiert und dem User gehört
+    const order = await getOrder(orderId);
+    if (order.userId !== userId) {
+      throw new Error('Sie können nur Ihre eigenen Bestellungen löschen');
+    }
+
+    // Lösche Bestellung
+    const orderRef = doc(db, 'orders', orderId);
+    await deleteDoc(orderRef);
+
+    console.log('✅ Bestellung gelöscht:', orderId);
+  } catch (error) {
+    console.error('❌ Fehler beim Löschen der Bestellung:', error);
+    throw error;
+  }
+};
+
+// ===== KATEGORIEN =====
+
+/**
+ * Standard-Kategorien für Produkte
+ */
+export const PRODUCT_CATEGORIES = [
+  { id: 'weinglaeser', name: 'Weingläser', icon: '🍷' },
+  { id: 'oeffner', name: 'Öffner', icon: '🍾' },
+  { id: 'kuehler', name: 'Weinkühler', icon: '🧊' },
+  { id: 'geschenkboxen', name: 'Geschenkboxen', icon: '🎁' },
+  { id: 'sonstiges', name: 'Sonstiges', icon: '📦' }
+];
+
+/**
+ * Ruft alle Kategorien ab (aus Firestore oder Standard-Liste)
+ * @returns {Promise<Array>} Array von Kategorien
+ */
+export const getProductCategories = async () => {
+  try {
+    // Versuche Kategorien aus Firestore zu laden
+    const categoriesRef = collection(db, 'productCategories');
+    const snapshot = await getDocs(categoriesRef);
+
+    if (!snapshot.empty) {
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    }
+
+    // Fallback: Standard-Kategorien
+    return PRODUCT_CATEGORIES;
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen der Kategorien:', error);
+    // Fallback: Standard-Kategorien
+    return PRODUCT_CATEGORIES;
+  }
+};
+
+/**
+ * Erstellt eine neue Kategorie (Admin)
+ * @param {Object} categoryData - Kategoriedaten
+ * @returns {Promise<string>} Kategorie-ID
+ */
+export const createProductCategory = async (categoryData) => {
+  try {
+    if (!categoryData.id || !categoryData.name) {
+      throw new Error('Kategorie-ID und Name sind erforderlich');
+    }
+
+    const categoryRef = await addDoc(collection(db, 'productCategories'), {
+      id: categoryData.id,
+      name: categoryData.name,
+      icon: categoryData.icon || '📦',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Kategorie erstellt:', categoryRef.id);
+    return categoryRef.id;
+  } catch (error) {
+    console.error('❌ Fehler beim Erstellen der Kategorie:', error);
     throw error;
   }
 };

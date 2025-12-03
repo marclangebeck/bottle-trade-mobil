@@ -13,17 +13,25 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import OptimizedImage from '../components/OptimizedImage';
 
-export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletters = [], onCreateNewsletter, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletters = [], onCreateNewsletter, onSendNewsletter, onDeleteNewsletter, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingNewsletter, setIsCreatingNewsletter] = useState(false);
+  const [isCreating, setIsCreating] = useState(false); // Verhindert doppelte Aufrufe
   const [newsletterData, setNewsletterData] = useState({
     title: '',
     content: '',
     targetGroup: 'newsletter_subscribers' // Nur Newsletter-Abonnenten
   });
 
-  const handleCreateNewsletter = () => {
+  const handleCreateNewsletter = async () => {
+    // Verhindere doppelte Aufrufe
+    if (isCreating) {
+      console.log('⚠️ Erstellung läuft bereits, überspringe erneuten Aufruf');
+      return;
+    }
+
     console.log('🔄 Erstelle neuen Newsletter...', newsletterData);
     
     if (!newsletterData.title.trim() || !newsletterData.content.trim()) {
@@ -33,35 +41,65 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
     }
 
     console.log('✅ Newsletter-Daten validiert, erstelle Newsletter...');
+    setIsCreating(true);
 
-    if (onCreateNewsletter) {
-      onCreateNewsletter(newsletterData);
-      console.log('✅ Newsletter erfolgreich erstellt und an App.js weitergegeben');
+    try {
+      if (onCreateNewsletter) {
+        await onCreateNewsletter(newsletterData);
+        console.log('✅ Newsletter erfolgreich erstellt und an App.js weitergegeben');
+        
+        Alert.alert('Erfolg', 'Newsletter wurde erfolgreich erstellt! Sie können ihn jetzt über den "Senden"-Button versenden.');
+        setIsCreatingNewsletter(false);
+        setNewsletterData({
+          title: '',
+          content: '',
+          targetGroup: 'newsletter_subscribers'
+        });
+      } else {
+        Alert.alert('Fehler', 'Erstellungs-Funktion nicht verfügbar.');
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Erstellen des Newsletters:', error);
+      Alert.alert('Fehler', 'Newsletter konnte nicht erstellt werden: ' + (error.message || 'Unbekannter Fehler'));
+    } finally {
+      setIsCreating(false);
     }
-    
-    Alert.alert('Erfolg', 'Newsletter wurde erfolgreich erstellt und an alle Newsletter-Abonnenten gesendet!');
-    setIsCreatingNewsletter(false);
-    setNewsletterData({
-      title: '',
-      content: '',
-      targetGroup: 'newsletter_subscribers'
-    });
   };
 
   const handleBack = () => {
     onNavigate('admin-dashboard');
   };
 
-  const handleSendNewsletter = (newsletter) => {
+  const handleSendNewsletter = async (newsletter) => {
+    // Prüfe, ob Newsletter bereits versendet wurde
+    if (newsletter.status === 'sent') {
+      Alert.alert('Hinweis', 'Dieser Newsletter wurde bereits versendet.');
+      return;
+    }
+
     Alert.alert(
       'Newsletter senden',
       `Möchten Sie den Newsletter "${newsletter.title}" wirklich an alle Newsletter-Abonnenten senden?`,
       [
         { text: 'Abbrechen', style: 'cancel' },
-        { text: 'Senden', style: 'default', onPress: () => {
-          console.log('📧 Newsletter gesendet:', newsletter.id);
-          Alert.alert('Erfolg', 'Newsletter wurde gesendet!');
-        }}
+        { 
+          text: 'Senden', 
+          style: 'default', 
+          onPress: async () => {
+            try {
+              console.log('📧 Versende Newsletter:', newsletter.id);
+              if (onSendNewsletter) {
+                const notificationCount = await onSendNewsletter(newsletter.id, newsletter.targetGroup || 'newsletter_subscribers');
+                Alert.alert('Erfolg', `Newsletter wurde erfolgreich an ${notificationCount} Abonnenten gesendet!`);
+              } else {
+                Alert.alert('Fehler', 'Send-Funktion nicht verfügbar.');
+              }
+            } catch (error) {
+              console.error('❌ Fehler beim Versenden:', error);
+              Alert.alert('Fehler', 'Newsletter konnte nicht versendet werden: ' + error.message);
+            }
+          }
+        }
       ]
     );
   };
@@ -72,62 +110,106 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
       `Möchten Sie den Newsletter "${newsletter.title}" wirklich löschen?`,
       [
         { text: 'Abbrechen', style: 'cancel' },
-        { text: 'Löschen', style: 'destructive', onPress: () => {
-          console.log('🗑️ Newsletter gelöscht:', newsletter.id);
-          Alert.alert('Erfolg', 'Newsletter wurde gelöscht!');
-        }}
+        { 
+          text: 'Löschen', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              console.log('🗑️ Lösche Newsletter:', newsletter.id);
+              if (onDeleteNewsletter) {
+                await onDeleteNewsletter(newsletter.id);
+                Alert.alert('Erfolg', 'Newsletter wurde gelöscht!');
+              } else {
+                Alert.alert('Fehler', 'Lösch-Funktion nicht verfügbar.');
+              }
+            } catch (error) {
+              console.error('❌ Fehler beim Löschen:', error);
+              Alert.alert('Fehler', 'Newsletter konnte nicht gelöscht werden.');
+            }
+          }
+        }
       ]
     );
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
-      
       {/* StatusBar-Ersatz für iPhone */}
       <View style={{
         height: Platform.OS === 'ios' ? 60 : 0,
         backgroundColor: '#2c2c2c',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        borderBottomWidth: 0.5,
-        borderBottomColor: 'rgba(255, 255, 255, 0.2)'
+        width: '100%',
       }} />
-      
-      <DynamicHamburgerMenu 
-        onNavigate={onNavigate} 
-        isLoggedIn={true} 
-        onLogout={onLogout} 
-        isAdmin={true} 
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
-        renderButton={false}
-        externalMenuVisible={isMenuVisible}
-        onMenuToggle={setIsMenuVisible}
-      />
-      
-      <View style={styles.contentContainer}>
-        <View style={styles.header}>
-          <View style={styles.hamburgerContainer}>
-            <TouchableOpacity 
-              style={styles.hamburgerButton}
-              onPress={() => setIsMenuVisible(!isMenuVisible)}
-            >
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
-            </TouchableOpacity>
+      <StatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+      <View style={styles.container}>
+        <DynamicHamburgerMenu 
+          onNavigate={onNavigate} 
+          isLoggedIn={true} 
+          onLogout={onLogout} 
+          isAdmin={true} 
+          unreadNotifications={unreadNotifications}
+          unreadHints={unreadHints}
+          renderButton={false}
+          externalMenuVisible={isMenuVisible}
+          onMenuToggle={setIsMenuVisible}
+        />
+        
+        <View style={styles.contentContainer}>
+          {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+          <View style={styles.logoHeaderContainer}>
+            {/* Hamburger-Menü links */}
+            <View style={styles.headerLeft}>
+              <View style={styles.hamburgerContainer}>
+                <TouchableOpacity 
+                  style={styles.hamburgerButton}
+                  onPress={() => setIsMenuVisible(!isMenuVisible)}
+                >
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            {/* Bottle (Logo) Trade in der Mitte */}
+            <View style={styles.logoHeaderCenter}>
+              <Text style={styles.logoHeaderText}>Bottle</Text>
+              <View style={styles.logoImageWrapper}>
+                <OptimizedImage
+                  source={require('../assets/images/Logo_white.png')}
+                  style={styles.logoHeaderImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.logoHeaderText}>Trade</Text>
+            </View>
+            
+            {/* Profil-Icon rechts */}
+            <View style={styles.profileSection}>
+              <TouchableOpacity 
+                style={styles.profileIconContainer}
+                onPress={() => onNavigate('profil')}
+              >
+                <View style={styles.profileIconCircle}>
+                  <Text style={styles.profileIconText}>A</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.headerCenter}>
-            <Text style={styles.greeting}>Newsletter</Text>
+          
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
-          <View style={styles.headerRight} />
-        </View>
-
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          
+          {/* Header mit Überschrift */}
+          <View style={styles.header}>
+            <View style={styles.headerCenter}>
+              <Text style={styles.greeting}>Newsletter</Text>
+            </View>
+          </View>
+          
+<ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.dashboardContainer}>
             <TouchableOpacity 
               style={styles.backButton}
@@ -188,10 +270,13 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
                     </TouchableOpacity>
                     
                     <TouchableOpacity 
-                      style={styles.createButton} 
+                      style={[styles.createButton, isCreating && styles.createButtonDisabled]} 
                       onPress={handleCreateNewsletter}
+                      disabled={isCreating}
                     >
-                      <Text style={styles.createButtonText}>Newsletter erstellen</Text>
+                      <Text style={styles.createButtonText}>
+                        {isCreating ? 'Erstelle...' : 'Newsletter erstellen'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -208,7 +293,15 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
                     <View key={newsletter.id} style={styles.newsletterCard}>
                       <View style={styles.newsletterHeader}>
                         <Text style={styles.newsletterTitle}>{newsletter.title}</Text>
-                        <Text style={styles.newsletterDate}>{newsletter.createdAt}</Text>
+                        <Text style={styles.newsletterDate}>
+                          {newsletter.createdAt 
+                            ? (newsletter.createdAt.toDate 
+                              ? newsletter.createdAt.toDate().toLocaleDateString('de-DE') 
+                              : newsletter.createdAt.seconds 
+                                ? new Date(newsletter.createdAt.seconds * 1000).toLocaleDateString('de-DE')
+                                : new Date(newsletter.createdAt).toLocaleDateString('de-DE'))
+                            : 'Unbekannt'}
+                        </Text>
                       </View>
                       
                       <Text style={styles.newsletterContent} numberOfLines={3}>
@@ -217,16 +310,20 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
                       
                       <View style={styles.newsletterStats}>
                         <Text style={styles.statText}>Zielgruppe: Newsletter-Abonnenten</Text>
-                        <Text style={styles.statText}>Status: {newsletter.status || 'Entwurf'}</Text>
+                        <Text style={styles.statText}>
+                          Status: {newsletter.status === 'sent' ? 'Versendet' : newsletter.status === 'draft' ? 'Entwurf' : newsletter.status || 'Entwurf'}
+                        </Text>
                       </View>
                       
                       <View style={styles.newsletterActions}>
-                        <TouchableOpacity 
-                          style={[styles.actionButton, styles.sendButton]} 
-                          onPress={() => handleSendNewsletter(newsletter)}
-                        >
-                          <Text style={styles.actionButtonText}>📤 Senden</Text>
-                        </TouchableOpacity>
+                        {newsletter.status !== 'sent' && (
+                          <TouchableOpacity 
+                            style={[styles.actionButton, styles.sendButton]} 
+                            onPress={() => handleSendNewsletter(newsletter)}
+                          >
+                            <Text style={styles.actionButtonText}>📤 Senden</Text>
+                          </TouchableOpacity>
+                        )}
                         
                         <TouchableOpacity 
                           style={[styles.actionButton, styles.deleteButton]} 
@@ -243,7 +340,8 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
           </View>
           </ScrollView>
         </View>
-      <Footer />
+        <Footer />
+      </View>
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
@@ -262,42 +360,115 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
   },
+  logoHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
+  },
+  headerLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+  },
+  logoHeaderCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  logoHeaderText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileSection: {
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileIconContainer: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  profileIconCircle: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 25,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
+
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#2c2c2c',
     position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 90,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
-    // Glassmorphism Effekt
-    shadowColor: '#DAA520',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    marginTop: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   backButton: {
-    backgroundColor: '#D2691E',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
-    alignItems: 'center',
-    shadowColor: '#D2691E',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    padding: 10,
+    marginBottom: 10,
   },
   backButtonText: {
-    color: '#FFFFFF',
+    color: '#FFD700',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -305,16 +476,29 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -322,16 +506,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  headerRight: {
-    flex: 0,
-    width: 80,
-    alignItems: 'center',
-  },
   greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c2c2c', // Dunkler Text auf hellem Header
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
+    letterSpacing: 1,
+    includeFontPadding: false,
   },
   content: {
     flex: 1,
@@ -343,7 +524,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   sectionTitle: {
-    color: '#2f3a3b',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 15,
@@ -468,6 +649,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  createButtonDisabled: {
+    opacity: 0.6,
+  },
   newsletterCard: {
     backgroundColor: '#FFFFFF',
     padding: 20,
@@ -539,7 +723,7 @@ const styles = StyleSheet.create({
     color: '#2f3a3b',
   },
   emptyText: {
-    color: '#666666',
+    color: '#FFFFFF',
     fontSize: 16,
     textAlign: 'center',
     fontStyle: 'italic',

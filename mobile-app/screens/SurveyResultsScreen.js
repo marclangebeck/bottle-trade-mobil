@@ -16,52 +16,88 @@ import BottomNavigation from '../components/BottomNavigation';
 
 const { width } = Dimensions.get('window');
 
-export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surveyAnswers = [], isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surveyAnswers = [], onGetSurveyAnswers = null, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [results, setResults] = useState(null);
+  const [loadedAnswers, setLoadedAnswers] = useState([]);
+  const [isLoadingAnswers, setIsLoadingAnswers] = useState(false);
 
-  const calculateResults = () => {
-    if (!survey || !survey.options) return;
+  // Lade Antworten aus Firestore, wenn Survey vorhanden ist
+  useEffect(() => {
+    if (survey && survey.id && onGetSurveyAnswers) {
+      setIsLoadingAnswers(true);
+      console.log('🔄 Lade Survey-Antworten für Survey:', survey.id);
+      onGetSurveyAnswers(survey.id)
+        .then(answers => {
+          console.log('✅ Survey-Antworten geladen:', answers.length);
+          setLoadedAnswers(answers);
+          setIsLoadingAnswers(false);
+        })
+        .catch(error => {
+          console.error('❌ Fehler beim Laden der Survey-Antworten:', error);
+          setIsLoadingAnswers(false);
+        });
+    } else if (surveyAnswers && surveyAnswers.length > 0) {
+      // Fallback: Verwende übergebene surveyAnswers
+      setLoadedAnswers(surveyAnswers);
+    }
+  }, [survey?.id, onGetSurveyAnswers]);
 
-    const optionCounts = {};
-    const totalAnswers = surveyAnswers.filter(answer => answer.surveyId === survey.id).length;
+  // Berechne Ergebnisse, wenn Survey und Antworten vorhanden sind
+  useEffect(() => {
+    const answersToUse = loadedAnswers.length > 0 ? loadedAnswers : surveyAnswers;
+    if (survey && survey.options && answersToUse.length > 0) {
+      console.log('🔄 Berechne Ergebnisse für Survey:', survey.id, 'mit', answersToUse.length, 'Antworten');
+      
+      const optionCounts = {};
+      const totalAnswers = answersToUse.filter(answer => answer.surveyId === survey.id).length;
 
-    // Initialisiere alle Optionen mit 0
-    survey.options.forEach((option, index) => {
-      optionCounts[index] = 0;
-    });
-
-    // Zähle die Antworten
-    surveyAnswers
-      .filter(answer => answer.surveyId === survey.id)
-      .forEach(answer => {
-        if (optionCounts[answer.selectedOption] !== undefined) {
-          optionCounts[answer.selectedOption]++;
-        }
+      // Initialisiere alle Optionen mit 0
+      survey.options.forEach((option, index) => {
+        optionCounts[index] = 0;
       });
 
-    // Berechne Prozente
-    const resultsWithPercentages = Object.keys(optionCounts).map(optionIndex => {
-      const count = optionCounts[optionIndex];
-      const percentage = totalAnswers > 0 ? Math.round((count / totalAnswers) * 100) : 0;
-      return {
+      // Zähle die Antworten
+      answersToUse
+        .filter(answer => answer.surveyId === survey.id)
+        .forEach(answer => {
+          if (optionCounts[answer.selectedOption] !== undefined) {
+            optionCounts[answer.selectedOption]++;
+          }
+        });
+
+      // Berechne Prozente
+      const resultsWithPercentages = Object.keys(optionCounts).map(optionIndex => {
+        const count = optionCounts[optionIndex];
+        const percentage = totalAnswers > 0 ? Math.round((count / totalAnswers) * 100) : 0;
+        return {
+          option: survey.options[optionIndex],
+          count,
+          percentage
+        };
+      });
+
+      setResults({
+        totalAnswers,
+        optionResults: resultsWithPercentages
+      });
+    } else if (survey && survey.options && !isLoadingAnswers) {
+      // Keine Antworten vorhanden
+      const optionCounts = {};
+      survey.options.forEach((option, index) => {
+        optionCounts[index] = 0;
+      });
+      const resultsWithPercentages = Object.keys(optionCounts).map(optionIndex => ({
         option: survey.options[optionIndex],
-        count,
-        percentage
-      };
-    });
-
-    setResults({
-      totalAnswers,
-      optionResults: resultsWithPercentages
-    });
-  };
-
-  useEffect(() => {
-    if (survey && surveyAnswers) {
-      calculateResults();
+        count: 0,
+        percentage: 0
+      }));
+      setResults({
+        totalAnswers: 0,
+        optionResults: resultsWithPercentages
+      });
     }
-  }, [survey, surveyAnswers]);
+  }, [survey, loadedAnswers, surveyAnswers, isLoadingAnswers]);
 
   const handleBack = () => {
     onNavigate('admin-surveys');
@@ -159,7 +195,7 @@ export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surv
           <Text style={styles.surveyTitle}>{survey.title}</Text>
           <Text style={styles.surveyQuestion}>{survey.question}</Text>
           <Text style={styles.surveyStats}>
-            {results ? `${results.totalAnswers} Antworten` : 'Lade...'}
+            {isLoadingAnswers ? 'Lade Antworten...' : results ? `${results.totalAnswers} Antworten` : 'Keine Antworten'}
           </Text>
         </View>
 
@@ -247,7 +283,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(218, 165, 32, 0.3)',
     // Glassmorphism Effekt
-    shadowColor: '#DAA520',
+    shadowColor: '#a9c7cd',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -265,16 +301,28 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
   },

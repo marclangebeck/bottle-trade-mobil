@@ -1,11 +1,22 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import get_db
 from models.user import User
 from models.wein import Wein
 from models.btp_transaction import BtpTransaction
+from generate_invoice import generate_and_send_invoice
 
 app = FastAPI(title="Bottle Trade Mobile API", version="1.0.0")
+
+# CORS für Production (falls nötig)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # TODO: In Production spezifische Domains setzen
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def root():
@@ -53,3 +64,11 @@ async def get_btp_transaction(transaction_id: int, db: Session = Depends(get_db)
     if transaction is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return transaction
+
+# Rechnung generieren und versenden
+@app.post("/orders/{order_id}/generate-invoice")
+async def generate_invoice_endpoint(order_id: str):
+    """
+    Generiert PDF-Rechnung für eine Bestellung und versendet sie per E-Mail
+    """
+    return await generate_and_send_invoice(order_id)

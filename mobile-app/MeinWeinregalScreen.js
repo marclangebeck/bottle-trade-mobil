@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   View, 
   Text, 
@@ -10,7 +10,8 @@ import {
   Alert,
   TextInput,
   Modal,
-  Dimensions
+  Dimensions,
+  FlatList
 } from 'react-native';
 import { ImageBackground } from 'react-native';
 import OptimizedImage from './components/OptimizedImage';
@@ -19,10 +20,22 @@ import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
 import { getWinesByOwner, deleteWine, publishWine, unpublishWine } from './data/mockData';
 import { addWine } from './services/database-web';
-import { getAllWinesByOwner } from './services/database-web';
+import { getAllWinesByOwner, getUser } from './services/database-web';
 import { getCurrentUser } from './services/testAuth';
 
-export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false, viewUserId = null, tradeRequestId = null, onSelectTradeWine = null, onDeclineTradeRequest = null }) {
+// Hilfsfunktion für Initialen
+const getInitials = (user) => {
+  if (user?.firstName && user?.lastName) {
+    return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+  } else if (user?.username) {
+    return user.username.substring(0, 2).toUpperCase();
+  } else if (user?.email) {
+    return user.email.substring(0, 2).toUpperCase();
+  }
+  return 'P';
+};
+
+export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false, viewUserId = null, tradeRequestId = null, onSelectTradeWine = null, onDeclineTradeRequest = null, wishlistMatchCount = 0 }) {
   const [wines, setWines] = useState([]);
   const [allWines, setAllWines] = useState([]); // Alle Weine inkl. getauschter Weine für Flaschenzählung
   const [currentUserId, setCurrentUserId] = useState('');
@@ -36,13 +49,15 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedWineForDelete, setSelectedWineForDelete] = useState(null);
   const [deleteCount, setDeleteCount] = useState(1);
-  const [btp, setBtp] = useState(0);
+  const [profileImage, setProfileImage] = useState(null);
   const scrollViewRef = useRef(null);
   const deleteScrollViewRef = useRef(null);
   const itemHeight = 50;
   const [selectedWine, setSelectedWine] = useState(null); // Für Modal
   const [isModalVisible, setIsModalVisible] = useState(false); // Modal sichtbar
   const lastLoadedOwnerIdRef = useRef(null); // Verhindert mehrfaches Laden für denselben Owner
+  const [viewMode, setViewMode] = useState('container'); // 'container' oder 'list'
+  const [searchText, setSearchText] = useState(''); // Suchtext für Filterung
 
   // Admin-Status wird von App.js übergeben
   console.log('🔍 MeinWeinregalScreen: Admin-Status:', isAdmin ? 'Admin' : 'Standard-User');
@@ -53,6 +68,50 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
       setCurrentUserIdFromAuth();
     }
   }, [isLoggedIn]);
+
+  useEffect(() => {
+    // Lade Profilbild, wenn currentUserId gesetzt ist
+    if (currentUserId && isLoggedIn) {
+      loadProfileImage();
+    }
+  }, [currentUserId, isLoggedIn]);
+
+  const loadProfileImage = async () => {
+    try {
+      if (!currentUserId) return;
+      const userData = await getUser(currentUserId);
+      if (userData && userData.profilbild) {
+        setProfileImage(userData.profilbild);
+      } else {
+        setProfileImage(null);
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Laden des Profilbildes:', error);
+      setProfileImage(null);
+    }
+  };
+
+  // Filter-Funktion für Weine
+  const filterWines = (winesList, searchQuery) => {
+    if (!searchQuery || searchQuery.trim() === '') {
+      return winesList;
+    }
+    
+    const query = searchQuery.toLowerCase().trim();
+    return winesList.filter(wine => {
+      const name = wine.name?.toLowerCase() || '';
+      const winery = wine.winery?.toLowerCase() || '';
+      const vintage = wine.vintage?.toString() || '';
+      const region = wine.region?.toLowerCase() || '';
+      const grapeVariety = wine.grapeVariety?.toLowerCase() || '';
+      
+      return name.includes(query) ||
+             winery.includes(query) ||
+             vintage.includes(query) ||
+             region.includes(query) ||
+             grapeVariety.includes(query);
+    });
+  };
 
   useEffect(() => {
     // Nur Weine laden, wenn eingeloggt oder Fremdregal angeschaut wird
@@ -113,7 +172,6 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
       const currentUser = getCurrentUser();
       if (currentUser && currentUser.uid) {
         setCurrentUserId(currentUser.uid);
-        setBtp(currentUser?.btp ?? 0);
         console.log('✅ MeinWeinregalScreen: User-ID gesetzt:', currentUser.uid, 'für', currentUser.email);
       } else {
         // Nur warnen, wenn wirklich eingeloggt sein sollte, aber kein User gefunden wird
@@ -121,12 +179,10 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
           console.warn('⚠️ MeinWeinregalScreen: Kein User gefunden, obwohl eingeloggt');
         }
         // Kein Fallback mehr - nur setzen, wenn User wirklich vorhanden ist
-        setBtp(0);
       }
     } catch (error) {
       console.error('❌ MeinWeinregalScreen: Fehler beim Laden der User-ID:', error);
       // Kein Fallback mehr - nur setzen, wenn User wirklich vorhanden ist
-      setBtp(0);
     }
   };
 
@@ -222,6 +278,12 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
       publishedCount: getPublishedCount(group),
     }));
   };
+
+  // Gefilterte Weine (mit useMemo für Performance)
+  const filteredWines = useMemo(() => {
+    const groupedWinesList = groupWines(wines);
+    return filterWines(groupedWinesList, searchText);
+  }, [wines, searchText, viewingOtherUserId]);
 
   // Hamburger-Menü-Funktionen entfernt - wird durch DynamicHamburgerMenu gehandhabt
 
@@ -599,12 +661,6 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
                   <View style={styles.hamburgerLine} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.wishlistButton}
-                onPress={() => onNavigate('wunschliste')}
-              >
-                <Text style={styles.wishlistHeart}>♡</Text>
-              </TouchableOpacity>
             </View>
 
             {/* Bottle (Logo) Trade in der Mitte */}
@@ -626,14 +682,26 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
                 style={styles.profileIconContainer}
                 onPress={() => onNavigate('profil')}
               >
-                <View style={styles.profileIconCircle}>
-                  <Text style={styles.profileIconText}>P</Text>
-                </View>
+                {profileImage ? (
+                  <OptimizedImage
+                    source={{ uri: profileImage }}
+                    style={styles.profileIconImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.profileIconCircle}>
+                    <Text style={styles.profileIconText}>
+                      {getInitials(getCurrentUser())}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
-              <View style={styles.profileBtpBadge}>
-                <Text style={styles.profileBtpText}>{`${btp ?? 0} BTP`}</Text>
-              </View>
             </View>
+          </View>
+          
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
           
           {/* Header mit Überschrift */}
@@ -642,8 +710,62 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
               <Text style={styles.greeting}>{viewingOtherUserId ? 'Weinregal (Auswahl)' : 'Weinregal'}</Text>
             </View>
           </View>
+          
+          {/* Toggle-Buttons für Ansicht */}
+          <View style={styles.viewToggleContainer}>
+            <TouchableOpacity
+              style={[
+                styles.viewToggleButton,
+                viewMode === 'container' && styles.viewToggleButtonActive
+              ]}
+              onPress={() => setViewMode('container')}
+            >
+              <Text style={[
+                styles.viewToggleButtonText,
+                viewMode === 'container' && styles.viewToggleButtonTextActive
+              ]}>
+                Kacheln
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.viewToggleButton,
+                viewMode === 'list' && styles.viewToggleButtonActive
+              ]}
+              onPress={() => setViewMode('list')}
+            >
+              <Text style={[
+                styles.viewToggleButtonText,
+                viewMode === 'list' && styles.viewToggleButtonTextActive
+              ]}>
+                Liste
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Suchfeld */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Suche nach Name, Weingut, Jahrgang..."
+              placeholderTextColor="rgba(255, 255, 255, 0.5)"
+              value={searchText}
+              onChangeText={setSearchText}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchText.length > 0 && (
+              <TouchableOpacity
+                style={styles.searchClearButton}
+                onPress={() => setSearchText('')}
+              >
+                <Text style={styles.searchClearButtonText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* Content */}
+          {viewMode === 'container' ? (
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.dashboardContainer}>
               {/* Button "Weinregal befüllen erweitern" - nur für eigenes Regal */}
@@ -674,12 +796,14 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
                   <Text style={styles.loadingIcon}>⏳</Text>
                   <Text style={styles.loadingText}>Weine werden geladen...</Text>
                 </View>
-              ) : wines.length === 0 ? (
+              ) : filteredWines.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Text style={styles.emptyIcon}>🍷</Text>
-                  <Text style={styles.emptyTitle}>Noch keine Weine</Text>
+                  <Text style={styles.emptyTitle}>
+                    {searchText ? 'Keine Weine gefunden' : 'Noch keine Weine'}
+                  </Text>
                   <Text style={styles.emptySubtitle}>
-                    Füge deinen ersten Wein hinzu, um zu tauschen!
+                    {searchText ? 'Versuchen Sie eine andere Suche' : 'Füge deinen ersten Wein hinzu, um zu tauschen!'}
                   </Text>
                   {/* Button wird jetzt oben angezeigt */}
                 </View>
@@ -709,7 +833,7 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
                       </TouchableOpacity>
                     </View>
                   )}
-                  {groupWines(wines).map((wine, index) => {
+                  {filteredWines.map((wine, index) => {
                     const currentUser = getCurrentUser && getCurrentUser();
                     // Im eigenen Regal sind alle Weine "meine", im Fremdregal prüfen wir die Owner-ID
                     const isMine = !viewingOtherUserId || (currentUser && (
@@ -733,18 +857,60 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
                         onPress={() => handleWineImagePress(wine)}
                       >
                         {/* Nur Bild - Container besteht nur aus Bild */}
-                        <View style={styles.rowImageOnlyContainer}>
-                          {wine.labelImage ? (
-                            <OptimizedImage
-                              source={{ uri: wine.labelImage }}
-                              style={styles.rowImageOnly}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={styles.rowPlaceholderImageOnly}>
-                              <Text style={styles.placeholderTextOnly}>🍷</Text>
-                            </View>
-                          )}
+                        <View 
+                          style={styles.rowImageOnlyContainer}
+                          onLayout={(event) => {
+                            const { width } = event.nativeEvent.layout;
+                            // Speichere die Container-Breite für diesen Wein
+                            if (width && !wine._containerWidth) {
+                              wine._containerWidth = width;
+                            }
+                          }}
+                        >
+                          {(() => {
+                            const images = wine.labelImages || (wine.labelImage ? [wine.labelImage] : []);
+                            if (images.length === 0) {
+                              return (
+                                <View style={styles.rowPlaceholderImageOnly}>
+                                  <Text style={styles.placeholderTextOnly}>🍷</Text>
+                                </View>
+                              );
+                            }
+                            // Wenn nur ein Bild, zeige es direkt ohne ScrollView
+                            if (images.length === 1) {
+                              return (
+                                <View style={styles.singleImageContainer}>
+                                  <OptimizedImage
+                                    source={{ uri: images[0] }}
+                                    style={styles.rowImageOnly}
+                                    resizeMode="contain"
+                                  />
+                                </View>
+                              );
+                            }
+                            // Mehrere Bilder: ScrollView mit Swipe
+                            // Verwende die gemessene Container-Breite oder berechne sie
+                            const containerWidth = wine._containerWidth || (Dimensions.get('window').width * 0.48);
+                            return (
+                              <ScrollView
+                                horizontal
+                                pagingEnabled
+                                showsHorizontalScrollIndicator={false}
+                                style={styles.imageSwipeContainer}
+                                contentContainerStyle={styles.imageSwipeContent}
+                              >
+                                {images.map((imageUri, index) => (
+                                  <View key={index} style={[styles.imageWrapper, { width: containerWidth }]}>
+                                    <OptimizedImage
+                                      source={{ uri: imageUri }}
+                                      style={styles.rowImageOnly}
+                                      resizeMode="contain"
+                                    />
+                                  </View>
+                                ))}
+                              </ScrollView>
+                            );
+                          })()}
                           {/* Badge "Mein Wein" oben rechts (nur bei eigenen Weinen) */}
                           {isMine && (
                             <View style={styles.myWineBadge}>
@@ -765,6 +931,95 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
               )}
             </View>
           </ScrollView>
+          ) : (
+            <View style={styles.content}>
+              <View style={styles.dashboardContainer}>
+                {/* Button "Weinregal befüllen erweitern" - nur für eigenes Regal */}
+                {!viewingOtherUserId && (
+                  <TouchableOpacity 
+                    style={styles.addWineButton}
+                    onPress={() => onNavigate('weinregal')}
+                  >
+                    <Text style={[styles.addWineButtonIcon, { color: '#FFFFFF' }]}>➕</Text>
+                    <Text style={styles.addWineButtonText}>Weinregal befüllen</Text>
+                  </TouchableOpacity>
+                )}
+                
+                {isLoading ? (
+                  <View style={styles.loadingState}>
+                    <Text style={styles.loadingIcon}>⏳</Text>
+                    <Text style={styles.loadingText}>Weine werden geladen...</Text>
+                  </View>
+                ) : filteredWines.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyIcon}>🍷</Text>
+                    <Text style={styles.emptyTitle}>
+                      {searchText ? 'Keine Weine gefunden' : 'Noch keine Weine'}
+                    </Text>
+                    <Text style={styles.emptySubtitle}>
+                      {searchText ? 'Versuchen Sie eine andere Suche' : 'Füge deinen ersten Wein hinzu, um zu tauschen!'}
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={filteredWines}
+                    keyExtractor={(item) => item.id || item.wineIds?.[0] || `wine-${item.name}`}
+                    renderItem={({ item: wine }) => {
+                      const currentUser = getCurrentUser && getCurrentUser();
+                      // Im eigenen Regal sind alle Weine "meine", im Fremdregal prüfen wir die Owner-ID
+                      const isMine = !viewingOtherUserId || (currentUser && (
+                        (wine.ownerId && wine.ownerId === currentUser.uid) ||
+                        (wine.owner && (wine.owner === currentUser.username || wine.owner === currentUser.email))
+                      ));
+                      
+                      return (
+                        <TouchableOpacity
+                          style={styles.listItem}
+                          onPress={() => handleWineImagePress(wine)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.listItemImageContainer}>
+                            {(() => {
+                              const images = wine.labelImages || (wine.labelImage ? [wine.labelImage] : []);
+                              if (images.length === 0) {
+                                return (
+                                  <View style={styles.listItemPlaceholder}>
+                                    <Text style={styles.listItemPlaceholderText}>🍷</Text>
+                                  </View>
+                                );
+                              }
+                              return (
+                                <OptimizedImage
+                                  source={{ uri: images[0] }}
+                                  style={styles.listItemImage}
+                                  resizeMode="contain"
+                                />
+                              );
+                            })()}
+                            {/* Badge "Mein Wein" oben rechts (nur bei eigenen Weinen) */}
+                            {isMine && (
+                              <View style={styles.listItemMyWineBadge}>
+                                <Text style={styles.listItemMyWineBadgeText}>Mein Wein</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.listItemText} numberOfLines={2}>
+                            {wine.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={10}
+                    windowSize={10}
+                    removeClippedSubviews={true}
+                  />
+                )}
+              </View>
+            </View>
+          )}
         </View>
         <Footer />
       </View>
@@ -800,17 +1055,35 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
 
                 {/* Wein-Bild */}
                 <View style={styles.modalImageContainer}>
-                  {selectedWine.labelImage ? (
-                    <OptimizedImage
-                      source={{ uri: selectedWine.labelImage }}
-                      style={styles.modalImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.modalPlaceholderImage}>
-                      <Text style={styles.modalPlaceholderText}>🍷</Text>
-                    </View>
-                  )}
+                  {(() => {
+                    const images = selectedWine.labelImages || (selectedWine.labelImage ? [selectedWine.labelImage] : []);
+                    if (images.length === 0) {
+                      return (
+                        <View style={styles.modalPlaceholderImage}>
+                          <Text style={styles.modalPlaceholderText}>🍷</Text>
+                        </View>
+                      );
+                    }
+                    const screenWidth = Dimensions.get('window').width;
+                    return (
+                      <ScrollView
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.modalImageSwipeContainer}
+                        contentContainerStyle={styles.modalImageSwipeContent}
+                      >
+                        {images.map((imageUri, index) => (
+                          <OptimizedImage
+                            key={index}
+                            source={{ uri: imageUri }}
+                            style={[styles.modalImage, { width: screenWidth }]}
+                            resizeMode="cover"
+                          />
+                        ))}
+                      </ScrollView>
+                    );
+                  })()}
                 </View>
 
                 {/* Wein-Informationen */}
@@ -842,7 +1115,7 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
                   )}
                   
                   <Text style={styles.modalPrice}>
-                    💰 {selectedWine.price ? `${selectedWine.price}€` : 'Preis auf Anfrage'}
+                    💰 {selectedWine.price ? `${parseFloat(selectedWine.price).toFixed(2)}€` : 'Preis auf Anfrage'}
                   </Text>
                   
                   {!viewingOtherUserId && selectedWine.bottleCount > 0 && (
@@ -1376,7 +1649,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
   logoHeaderCenter: {
     flexDirection: 'row',
@@ -1395,8 +1668,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12, // Gleicher Abstand links
-    marginRight: 12, // Gleicher Abstand rechts
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1410,41 +1683,50 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileIconContainer: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  profileIconImage: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+  },
   profileIconText: {
     fontSize: 25,
     color: '#FFFFFF', // Weiß
     fontWeight: 'bold',
   },
-  profileBtpBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#DAA520',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  profileBtpText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2c2c2c',
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
     textAlign: 'center',
+    opacity: 0.85,
     letterSpacing: 0.5,
+    fontStyle: 'italic',
   },
   header: {
     flexDirection: 'row',
@@ -1458,9 +1740,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginTop: 0, // Reduziert, da Logo-Header oberhalb ist
     minHeight: 60,
-    // ALTE EINSTELLUNG (für Rückgängigmachen): borderTopWidth: 0.5,
-    // ALTE EINSTELLUNG (für Rückgängigmachen): borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    borderTopWidth: 0, // Entfernt
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     // ALTE EINSTELLUNG (für Rückgängigmachen): borderBottomColor: 'rgba(218, 165, 32, 0.3)',
@@ -1476,18 +1757,29 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
     marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    // ALTE EINSTELLUNG (für Rückgängigmachen): backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
-    backgroundColor: '#FFFFFF', // Weiß wie LoginScreen
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -1499,6 +1791,10 @@ const styles = StyleSheet.create({
   wishlistButton: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  wishlistHeartContainer: {
+    position: 'relative',
   },
   wishlistHeart: {
     fontSize: 24,
@@ -1506,6 +1802,28 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.4)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+  },
+  wishlistBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FF4444',
+    borderRadius: 12,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 1000,
+    elevation: 10,
+  },
+  wishlistBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    paddingHorizontal: 4,
   },
   headerCenter: {
     flex: 1,
@@ -1567,15 +1885,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   greeting: {
-    fontSize: 30,
-    fontWeight: '600',
-    color: '#DAA520', // Warmes Gold
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 0.5,
-    // Eleganter Gradient-Effekt durch Text-Shadow
-    textShadowColor: 'rgba(218, 165, 32, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6, // Größerer Radius für dickeren Glow-Effekt
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   content: {
@@ -1664,7 +1978,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF', // Weiße Border
     padding: 0, // Kein Padding innerhalb des Containers - Bild soll bis zum Rand gehen
     // Verbesserte Schatten für Tiefe
-    shadowColor: '#DAA520', // Warmes Gold Schatten
+    shadowColor: '#a9c7cd', // Warmes Gold Schatten
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -1674,6 +1988,8 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     position: 'relative',
+    backgroundColor: '#f5f5f5', // Heller Hintergrund für bessere Sichtbarkeit
+    overflow: 'hidden',
   },
   myWineBadge: {
     position: 'absolute',
@@ -1700,6 +2016,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  singleImageContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  imageWrapper: {
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
   rowImageOnly: {
     width: '100%',
     height: '100%',
@@ -1716,7 +2045,7 @@ const styles = StyleSheet.create({
   placeholderTextOnly: {
     fontSize: 64,
     opacity: 0.6,
-    color: '#DAA520', // Warmes Gold für Placeholder-Emoji
+    color: '#a9c7cd', // Warmes Gold für Placeholder-Emoji
   },
   rowImageOverlay: {
     position: 'absolute',
@@ -1996,7 +2325,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    shadowColor: '#DAA520',
+    shadowColor: '#a9c7cd',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 25,
@@ -2036,10 +2365,24 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 250,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    position: 'relative',
   },
   modalImage: {
+    height: '100%',
+  },
+  modalImageSwipeContainer: {
     width: '100%',
     height: '100%',
+  },
+  modalImageSwipeContent: {
+    alignItems: 'center',
+  },
+  imageSwipeContainer: {
+    width: '100%',
+    height: '100%',
+  },
+  imageSwipeContent: {
+    alignItems: 'center',
   },
   modalPlaceholderImage: {
     width: '100%',
@@ -2074,7 +2417,7 @@ const styles = StyleSheet.create({
   modalPrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#DAA520', // Warmes Gold für Preis
+    color: '#a9c7cd', // Warmes Gold für Preis
     marginTop: 12,
     marginBottom: 12,
     textAlign: 'center',
@@ -2277,6 +2620,140 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  viewToggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#2c2c2c',
+  },
+  viewToggleButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+    marginHorizontal: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  viewToggleButtonActive: {
+    backgroundColor: '#DAA520', // Gold
+    borderColor: '#DAA520',
+  },
+  viewToggleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  viewToggleButtonTextActive: {
+    color: '#2c2c2c',
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 5,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  listItemImageContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#f5f5f5',
+    marginRight: 12,
+  },
+  listItemImage: {
+    width: 80,
+    height: 80,
+  },
+  listItemPlaceholder: {
+    width: 80,
+    height: 80,
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listItemPlaceholderText: {
+    fontSize: 32,
+    opacity: 0.6,
+  },
+  listItemText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c2c2c',
+  },
+  listItemMyWineBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(218, 165, 32, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 1)',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  listItemMyWineBadgeText: {
+    color: '#2c2c2c',
+    fontSize: 9,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#2c2c2c',
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    color: '#FFFFFF',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  searchClearButton: {
+    marginLeft: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchClearButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

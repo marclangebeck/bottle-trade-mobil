@@ -121,13 +121,6 @@ export default function HamburgerMenu({ onNavigate, isLoggedIn = false, onLogout
                   
                   <TouchableOpacity 
                     style={styles.menuItem} 
-                    onPress={() => handleNavigation('btp')}
-                  >
-                    <Text style={styles.menuItemText}>💎 Bottle-Trade-Points</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.menuItem} 
                     onPress={() => handleNavigation('profil')}
                   >
                     <Text style={styles.menuItemText}>⚙️ Profil/Verwaltung</Text>

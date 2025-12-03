@@ -12,6 +12,7 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import OptimizedImage from '../components/OptimizedImage';
 import { collection, getDocs, query, orderBy, deleteDoc, doc, writeBatch, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
 import { deleteTradeRequest, deleteNotificationsForTradeRequest, deleteNotificationsForChat, deleteNotificationsForHint } from '../services/database-web';
@@ -551,21 +552,58 @@ export default function AdminTradesScreen({ onNavigate, onLogout, chats = [], on
       />
       
       <View style={styles.contentContainer}>
-        <View style={styles.header}>
-          <View style={styles.hamburgerContainer}>
+        {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+        <View style={styles.logoHeaderContainer}>
+          {/* Hamburger-Menü links */}
+          <View style={styles.headerLeft}>
+            <View style={styles.hamburgerContainer}>
+              <TouchableOpacity 
+                style={styles.hamburgerButton}
+                onPress={() => setIsMenuVisible(!isMenuVisible)}
+              >
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          {/* Bottle (Logo) Trade in der Mitte */}
+          <View style={styles.logoHeaderCenter}>
+            <Text style={styles.logoHeaderText}>Bottle</Text>
+            <View style={styles.logoImageWrapper}>
+              <OptimizedImage
+                source={require('../assets/images/Logo_white.png')}
+                style={styles.logoHeaderImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.logoHeaderText}>Trade</Text>
+          </View>
+          
+          {/* Profil-Icon rechts */}
+          <View style={styles.profileSection}>
             <TouchableOpacity 
-              style={styles.hamburgerButton}
-              onPress={() => setIsMenuVisible(!isMenuVisible)}
+              style={styles.profileIconContainer}
+              onPress={() => onNavigate('profil')}
             >
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
+              <View style={styles.profileIconCircle}>
+                <Text style={styles.profileIconText}>A</Text>
+              </View>
             </TouchableOpacity>
           </View>
+        </View>
+        
+                  {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+          </View>
+          
+{/* Header mit Überschrift */}
+        <View style={styles.header}>
           <View style={styles.headerCenter}>
             <Text style={styles.greeting}>Trade-Verwaltung</Text>
           </View>
-          <View style={styles.headerRight} />
         </View>
         
         {/* Tabs */}
@@ -639,48 +677,154 @@ export default function AdminTradesScreen({ onNavigate, onLogout, chats = [], on
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c',
   },
   contentContainer: {
     flex: 1,
-    paddingTop: Platform.OS === 'ios' ? 60 : 0,
+  },
+  logoHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
+  },
+  logoHeaderCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  logoHeaderText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileSection: {
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileIconContainer: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  profileIconCircle: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 25,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
+
+  headerLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+  },
+  hamburgerContainer: {
+    flex: 0,
+    position: 'relative',
+    zIndex: 1000,
+    width: 44,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  hamburgerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  hamburgerLine: {
+    width: 22,
+    height: 2.5,
+    backgroundColor: '#FFFFFF',
+    marginVertical: 3,
+    borderRadius: 1.5,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#2c2c2c',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  hamburgerContainer: {
-    width: 40,
-  },
-  hamburgerButton: {
-    width: 30,
-    height: 30,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  hamburgerLine: {
-    width: 20,
-    height: 2,
-    backgroundColor: '#fff',
-    marginVertical: 3,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#2c2c2c',
+    position: 'relative',
+    marginTop: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   headerCenter: {
     flex: 1,
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  headerRight: {
-    width: 40,
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    letterSpacing: 1,
+    includeFontPadding: false,
   },
   tabContainer: {
     flexDirection: 'row',

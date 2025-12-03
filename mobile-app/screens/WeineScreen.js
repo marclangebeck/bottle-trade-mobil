@@ -126,7 +126,12 @@ export default function WeineScreen({ onNavigate, onLogout, isAdmin = false, unr
         </View>
       </View>
       
-      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
+                {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+          </View>
+          
+<ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
         <View style={styles.searchContainer}>
           <TextInput
             style={styles.searchInput}
@@ -196,13 +201,12 @@ const styles = StyleSheet.create({
   },
   logoHeaderContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
-    borderBottomWidth: 0,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
   logoHeaderCenter: {
     flexDirection: 'row',
@@ -221,8 +225,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -231,15 +235,20 @@ const styles = StyleSheet.create({
     height: 40,
   },
   profileIconContainer: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
@@ -247,33 +256,64 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   profileIconText: {
-    fontSize: 18,
+    fontSize: 25,
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    paddingTop: 25,
-    paddingBottom: 25,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
     backgroundColor: '#2c2c2c',
     position: 'relative',
     marginTop: 0,
-    minHeight: 70,
-    borderTopWidth: 0,
-    borderBottomWidth: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   hamburgerContainer: {
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,

@@ -1,19 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Platform, StatusBar, TextInput } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Platform, StatusBar, TextInput, Modal, AppState } from 'react-native';
 import OptimizedImage from '../components/OptimizedImage';
 import { LinearGradient } from 'expo-linear-gradient';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
 import { getCurrentUser } from '../services/testAuth';
-import { getUser, updateUser } from '../services/database-web';
+import { 
+  getUser, 
+  updateUser, 
+  deleteUserProfileImage, 
+  validateProfileImage, 
+  deleteImageFromStorage,
+  uploadImageToStorage,
+  getWineryByOwner, 
+  createWinery, 
+  updateWinery,
+  getUserOrders,
+  deleteOrder
+} from '../services/database-web';
+import { cacheProfileImage, getCachedProfileImage, clearCachedProfileImage } from '../services/profileImageCache';
+import * as ImagePicker from 'expo-image-picker';
 
-export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, isLoggedIn = false, unreadCount = 0 }) {
+export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, isLoggedIn = false, unreadCount = 0, currentUser = null }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(null);
-  const [userBtp, setUserBtp] = useState(0);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -26,10 +39,120 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
     profilePublic: false,
     newsletter: false,
   });
+  const [profileImage, setProfileImage] = useState(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isWineryModalVisible, setIsWineryModalVisible] = useState(false);
+  const [wineryData, setWineryData] = useState(null);
+  const [wineryFormData, setWineryFormData] = useState({
+    name: '',
+    description: '',
+    region: '',
+    address: '',
+    website: '',
+    contactEmail: '',
+    phone: '',
+    images: []
+  });
+  const [isUploadingWineryImages, setIsUploadingWineryImages] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [isOrderModalVisible, setIsOrderModalVisible] = useState(false);
 
   useEffect(() => {
     loadUserData();
   }, []);
+
+  useEffect(() => {
+    if (user && user.uid) {
+      loadOrders();
+    }
+  }, [user]);
+
+  // Lade Bestellungen neu, wenn die App wieder aktiv wird (z.B. nach PayPal-Zahlung)
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        // App ist wieder aktiv geworden, lade Bestellungen neu
+        if (user && user.uid) {
+          console.log('🔄 App wieder aktiv, lade Bestellungen neu...');
+          loadOrders();
+        }
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (user && user.isWinery && user.isWineryVerified) {
+      loadWineryData();
+    }
+  }, [user]);
+
+  const loadOrders = async () => {
+    try {
+      setIsLoadingOrders(true);
+      const currentUser = getCurrentUser();
+      if (!currentUser || !currentUser.uid) return;
+      
+      const userOrders = await getUserOrders(currentUser.uid);
+      console.log('📦 Bestellungen geladen:', userOrders.length);
+      userOrders.forEach(order => {
+        console.log(`  - Bestellung ${order.id.substring(0, 8)}: Status = ${order.status || 'unbekannt'}`);
+      });
+      setOrders(userOrders);
+    } catch (error) {
+      console.error('❌ Fehler beim Laden der Bestellungen:', error);
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'Unbekannt';
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      return date.toLocaleDateString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return 'Unbekannt';
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'pending': return 'Ausstehend';
+      case 'paid': return 'Bezahlt';
+      case 'shipped': return 'Versendet';
+      case 'delivered': return 'Geliefert';
+      case 'cancelled': return 'Storniert';
+      default: return status;
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'pending': return '#FF9800';
+      case 'paid': return '#4CAF50';
+      case 'shipped': return '#2196F3';
+      case 'delivered': return '#9C27B0';
+      case 'cancelled': return '#F44336';
+      default: return '#666';
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -39,11 +162,35 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         Alert.alert('Fehler', 'Kein eingeloggter User gefunden');
         return;
       }
-      setUserBtp(currentUser?.btp ?? 0);
+
+      // Versuche zuerst aus Cache zu laden (für schnelleres Laden)
+      let cachedImageUrl = await getCachedProfileImage(currentUser.uid);
+      if (cachedImageUrl) {
+        setProfileImage(cachedImageUrl);
+      }
 
       const userData = await getUser(currentUser.uid);
       if (userData) {
         setUser(userData);
+        
+        // Wenn Firestore ein anderes Bild hat, aktualisiere Cache und State
+        if (userData.profilbild) {
+          if (userData.profilbild !== cachedImageUrl) {
+            // Neues Bild in Firestore, aktualisiere Cache
+            await cacheProfileImage(currentUser.uid, userData.profilbild);
+            setProfileImage(userData.profilbild);
+          } else {
+            // Gleiches Bild, verwende gecachte URL
+            setProfileImage(cachedImageUrl);
+          }
+        } else {
+          // Kein Bild in Firestore, lösche Cache
+          if (cachedImageUrl) {
+            await clearCachedProfileImage(currentUser.uid);
+          }
+          setProfileImage(null);
+        }
+        
         setFormData({
           username: userData.username || '',
           email: userData.email || '',
@@ -79,6 +226,34 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         return;
       }
 
+      // Upload Profilbild, falls ein neues ausgewählt wurde
+      let profilbildUrl = profileImage;
+      const oldProfileImageUrl = user?.profilbild; // Speichere URL des alten Bildes
+      
+      if (profileImage && (profileImage.startsWith('file://') || profileImage.startsWith('content://'))) {
+        try {
+          setIsUploadingImage(true);
+          profilbildUrl = await uploadImageToStorage(profileImage, 'users');
+          console.log('✅ Profilbild erfolgreich hochgeladen:', profilbildUrl);
+          
+          // Lösche das alte Profilbild aus Storage, falls vorhanden
+          if (oldProfileImageUrl && oldProfileImageUrl !== profilbildUrl) {
+            try {
+              await deleteImageFromStorage(oldProfileImageUrl);
+              console.log('✅ Altes Profilbild aus Storage gelöscht');
+            } catch (error) {
+              console.warn('⚠️ Fehler beim Löschen des alten Profilbildes (nicht kritisch):', error);
+              // Fehler beim Löschen ist nicht kritisch, fahre fort
+            }
+          }
+        } catch (error) {
+          console.error('❌ Fehler beim Hochladen des Profilbildes:', error);
+          Alert.alert('Fehler', 'Profilbild konnte nicht hochgeladen werden. Profil wird ohne Bild gespeichert.');
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
+
       // Update User in Firestore (Benutzername wird nicht geändert, da er nur einmal gesetzt werden kann)
       await updateUser(currentUser.uid, {
         // username wird absichtlich nicht aktualisiert - kann nur bei der Registrierung gesetzt werden
@@ -91,8 +266,16 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         bio: formData.bio,
         profilePublic: formData.profilePublic,
         newsletter: formData.newsletter,
+        profilbild: profilbildUrl,
         updatedAt: new Date(),
       });
+
+      // Aktualisiere Cache mit neuem Profilbild
+      if (profilbildUrl) {
+        await cacheProfileImage(currentUser.uid, profilbildUrl);
+      } else {
+        await clearCachedProfileImage(currentUser.uid);
+      }
 
       // Lade Daten neu
       await loadUserData();
@@ -112,6 +295,270 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
 
   const updateFormData = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handlePickImage = async () => {
+    try {
+      // Berechtigungen anfordern
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Berechtigung erforderlich', 'Bitte erlauben Sie den Zugriff auf Ihre Fotos.');
+        return;
+      }
+
+      // Bild auswählen mit verbesserter Komprimierung und Cropping
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true, // Cropping aktiviert
+        aspect: [1, 1], // Quadratisches Format
+        quality: 0.7, // Reduzierte Qualität für bessere Komprimierung (0.7 statt 0.8)
+        exif: false, // EXIF-Daten entfernen für kleinere Dateigröße
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedImage = result.assets[0];
+        
+        // Validierung des ausgewählten Bildes
+        const validation = await validateProfileImage(
+          selectedImage.uri,
+          selectedImage.fileSize || null,
+          selectedImage.mimeType || null
+        );
+        
+        if (!validation.valid) {
+          Alert.alert('Ungültiges Bild', validation.error || 'Das Bild konnte nicht validiert werden.');
+          return;
+        }
+        
+        // Bild ist gültig, setze es
+        setProfileImage(selectedImage.uri);
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Auswählen des Bildes:', error);
+      Alert.alert('Fehler', 'Bild konnte nicht ausgewählt werden.');
+    }
+  };
+
+  const handleDeleteProfileImage = async () => {
+    try {
+      // Bestätigungsdialog
+      Alert.alert(
+        'Profilbild löschen',
+        'Möchten Sie Ihr Profilbild wirklich löschen?',
+        [
+          { text: 'Abbrechen', style: 'cancel' },
+          {
+            text: 'Löschen',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                const currentUser = getCurrentUser();
+                if (!currentUser || !currentUser.uid) {
+                  Alert.alert('Fehler', 'Kein eingeloggter User gefunden');
+                  return;
+                }
+
+                // Lösche Profilbild
+                await deleteUserProfileImage(currentUser.uid);
+                
+                // Lösche Cache
+                await clearCachedProfileImage(currentUser.uid);
+                
+                // Aktualisiere lokalen State
+                setProfileImage(null);
+                
+                // Lade Daten neu
+                await loadUserData();
+                
+                Alert.alert('Erfolg', 'Profilbild wurde erfolgreich gelöscht.');
+              } catch (error) {
+                console.error('❌ Fehler beim Löschen des Profilbildes:', error);
+                Alert.alert('Fehler', 'Profilbild konnte nicht gelöscht werden: ' + error.message);
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('❌ Fehler beim Löschen des Profilbildes:', error);
+      Alert.alert('Fehler', 'Profilbild konnte nicht gelöscht werden.');
+    }
+  };
+
+  const getInitials = () => {
+    if (formData.firstName && formData.lastName) {
+      return `${formData.firstName.charAt(0)}${formData.lastName.charAt(0)}`.toUpperCase();
+    } else if (formData.username) {
+      return formData.username.substring(0, 2).toUpperCase();
+    } else if (formData.email) {
+      return formData.email.substring(0, 2).toUpperCase();
+    }
+    return 'P';
+  };
+
+  const loadWineryData = async () => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !currentUser.uid) return;
+      
+      const winery = await getWineryByOwner(currentUser.uid);
+      if (winery) {
+        setWineryData(winery);
+        setWineryFormData({
+          name: winery.name || '',
+          description: winery.description || '',
+          region: winery.region || '',
+          address: winery.address || '',
+          website: winery.website || '',
+          contactEmail: winery.contactEmail || '',
+          phone: winery.phone || '',
+          images: winery.images || []
+        });
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Laden der Weingut-Daten:', error);
+    }
+  };
+
+  const handleOpenWineryModal = () => {
+    // Prüfe, ob User als Weingut verifiziert ist
+    if (!user || !user.isWineryVerified) {
+      Alert.alert('Nicht verifiziert', 'Sie müssen als Weingut verifiziert sein, um ein Weingut-Profil zu erstellen.');
+      return;
+    }
+    setIsWineryModalVisible(true);
+  };
+
+  const handleCloseWineryModal = () => {
+    setIsWineryModalVisible(false);
+  };
+
+  const handleSaveWinery = async () => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !currentUser.uid) {
+        Alert.alert('Fehler', 'Kein eingeloggter User gefunden');
+        return;
+      }
+
+      // Prüfe, ob User als Weingut verifiziert ist
+      if (!user || !user.isWineryVerified) {
+        Alert.alert('Fehler', 'Sie müssen als Weingut verifiziert sein, um ein Weingut-Profil zu erstellen.');
+        return;
+      }
+
+      if (!wineryFormData.name || !wineryFormData.name.trim()) {
+        Alert.alert('Fehler', 'Bitte geben Sie einen Namen für das Weingut ein');
+        return;
+      }
+
+      // Upload Bilder, falls neue hinzugefügt wurden
+      let uploadedImages = [...wineryFormData.images];
+      const imagesToUpload = wineryFormData.images.filter(img => 
+        img.startsWith('file://') || img.startsWith('content://')
+      );
+
+      if (imagesToUpload.length > 0) {
+        setIsUploadingWineryImages(true);
+        try {
+          const uploadPromises = imagesToUpload.map(uri => 
+            uploadImageToStorage(uri, 'wineries')
+          );
+          const uploadedUrls = await Promise.all(uploadPromises);
+          
+          // Ersetze lokale URIs durch hochgeladene URLs
+          uploadedImages = wineryFormData.images.map(img => {
+            const index = imagesToUpload.indexOf(img);
+            return index !== -1 ? uploadedUrls[index] : img;
+          });
+        } catch (error) {
+          console.error('❌ Fehler beim Hochladen der Bilder:', error);
+          Alert.alert('Fehler', 'Bilder konnten nicht hochgeladen werden');
+          setIsUploadingWineryImages(false);
+          return;
+        } finally {
+          setIsUploadingWineryImages(false);
+        }
+      }
+
+      const wineryDataToSave = {
+        ...wineryFormData,
+        images: uploadedImages,
+        ownerId: currentUser.uid,
+        // Wenn User als Weingut verifiziert ist, setze isVerified auf true
+        isVerified: user.isWineryVerified === true
+      };
+
+      if (wineryData) {
+        // Update bestehendes Weingut
+        await updateWinery(wineryData.id, wineryDataToSave);
+        Alert.alert('Erfolg', 'Weingut-Profil wurde erfolgreich aktualisiert');
+      } else {
+        // Erstelle neues Weingut
+        // Wenn User verifiziert ist, setze isVerified direkt auf true, sonst false
+        const wineryToCreate = {
+          ...wineryDataToSave,
+          isVerified: user.isWineryVerified === true
+        };
+        await createWinery(wineryToCreate);
+        if (user.isWineryVerified) {
+          Alert.alert('Erfolg', 'Weingut-Profil wurde erfolgreich erstellt und ist verifiziert.');
+        } else {
+          Alert.alert('Erfolg', 'Weingut-Profil wurde erfolgreich erstellt. Es muss von einem Admin verifiziert werden.');
+        }
+      }
+
+      await loadWineryData();
+      setIsWineryModalVisible(false);
+    } catch (error) {
+      console.error('❌ Fehler beim Speichern des Weingut-Profils:', error);
+      Alert.alert('Fehler', 'Weingut-Profil konnte nicht gespeichert werden: ' + error.message);
+    }
+  };
+
+  const handlePickWineryImages = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Berechtigung erforderlich', 'Wir benötigen Zugriff auf deine Galerie.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        allowsEditing: false,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const currentImages = wineryFormData.images || [];
+        const newImages = result.assets.map(asset => asset.uri);
+        const totalImages = currentImages.length + newImages.length;
+
+        if (totalImages > 5) {
+          Alert.alert('Fehler', 'Sie können maximal 5 Bilder hochladen');
+          return;
+        }
+
+        setWineryFormData({
+          ...wineryFormData,
+          images: [...currentImages, ...newImages]
+        });
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Auswählen der Bilder:', error);
+      Alert.alert('Fehler', 'Bilder konnten nicht ausgewählt werden');
+    }
+  };
+
+  const handleRemoveWineryImage = (index) => {
+    const newImages = [...wineryFormData.images];
+    newImages.splice(index, 1);
+    setWineryFormData({
+      ...wineryFormData,
+      images: newImages
+    });
   };
 
   const handleLogout = () => {
@@ -155,7 +602,8 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
     : 'Keine Adresse angegeben';
 
   return (
-    <View style={styles.container}>
+    <View style={styles.outerContainer}>
+      <StatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
       {/* StatusBar-Ersatz für iPhone */}
       <View style={{
         height: Platform.OS === 'ios' ? 60 : 0,
@@ -189,12 +637,6 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
               <View style={styles.hamburgerLine} />
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={styles.wishlistButton}
-            onPress={() => onNavigate('wunschliste')}
-          >
-            <Text style={styles.wishlistHeart}>♡</Text>
-          </TouchableOpacity>
         </View>
         
         {/* Bottle (Logo) Trade in der Mitte */}
@@ -212,14 +654,24 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         
         {/* Profil-Icon und Aktionen rechts */}
           <View style={styles.profileSection}>
-          <View style={styles.profileIconContainer}>
-            <View style={styles.profileIconCircle}>
-              <Text style={styles.profileIconText}>P</Text>
-            </View>
-          </View>
-          <View style={styles.profileBtpBadge}>
-            <Text style={styles.profileBtpText}>{`${userBtp} BTP`}</Text>
-          </View>
+          <TouchableOpacity 
+            style={styles.profileIconContainer}
+            onPress={() => onNavigate('profil')}
+          >
+            {user?.profilbild ? (
+              <OptimizedImage
+                source={{ uri: user.profilbild }}
+                style={styles.profileIconImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.profileIconCircle}>
+                <Text style={styles.profileIconText}>
+                  {getInitials()}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <View style={styles.profileActions}>
             {!isEditing ? (
               <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.profileActionButton}>
@@ -239,7 +691,12 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         </View>
         </View>
         
-        {/* Header mit Überschrift */}
+                  {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+          </View>
+          
+{/* Header mit Überschrift */}
         <View style={styles.header}>
           <View style={styles.headerCenter}>
             <View style={styles.greetingContainer}>
@@ -250,9 +707,44 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         
         <ScrollView style={styles.scrollContainer}>
           <View style={styles.profileCard}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
-            </View>
+            <TouchableOpacity 
+              style={styles.avatarContainer}
+              onPress={isEditing ? handlePickImage : undefined}
+              disabled={!isEditing}
+            >
+              {profileImage ? (
+                <OptimizedImage
+                  source={{ uri: profileImage }}
+                  style={styles.avatar}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{getInitials()}</Text>
+                </View>
+              )}
+              {isEditing && (
+                <View style={styles.avatarEditOverlay}>
+                  <Text style={styles.avatarEditText}>📷</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {isEditing && (
+              <>
+                <Text style={styles.avatarHint}>
+                  📷 Tippen Sie auf das Profilbild, um es zu ändern{'\n'}
+                  ✂️ Sie können das Bild zuschneiden und anpassen
+                </Text>
+                {profileImage && (
+                  <TouchableOpacity 
+                    style={styles.deleteImageButton}
+                    onPress={handleDeleteProfileImage}
+                  >
+                    <Text style={styles.deleteImageButtonText}>🗑️ Profilbild löschen</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
             {isEditing ? (
               <>
                 <Text style={styles.inputLabel}>Benutzername (kann nicht geändert werden)</Text>
@@ -287,10 +779,6 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
           </View>
 
           <View style={styles.statsCard}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{user.btp || 0}</Text>
-              <Text style={styles.statLabel}>BTP</Text>
-            </View>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
                 {user.createdAt ? new Date(user.createdAt.seconds * 1000).getFullYear() : 'N/A'}
@@ -418,6 +906,78 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
             )}
           </View>
 
+          {/* Weingut-Profil Info (nur wenn isWinery: true, aber noch nicht verifiziert) */}
+          {user.isWinery && !user.isWineryVerified && (
+            <View style={styles.infoCard}>
+              <Text style={styles.cardTitle}>🏰 Weingut-Profil</Text>
+              <Text style={styles.infoText}>
+                ⏳ Ihr Weingut-Account wartet auf Verifizierung durch einen Administrator. 
+                Sobald Sie verifiziert wurden, können Sie hier Ihr Weingut-Profil erstellen.
+              </Text>
+            </View>
+          )}
+          
+          {/* Weingut-Profil Button (nur wenn isWinery: true und verifiziert) */}
+          {user.isWinery && user.isWineryVerified && (
+            <View style={styles.infoCard}>
+              <Text style={styles.cardTitle}>🏰 Weingut-Profil</Text>
+              <Text style={styles.infoText}>
+                {wineryData 
+                  ? wineryData.isVerified 
+                    ? '✅ Verifiziert' 
+                    : '⏳ Wartet auf Verifizierung'
+                  : 'Noch nicht erstellt'}
+              </Text>
+              <TouchableOpacity 
+                style={styles.wineryButton}
+                onPress={handleOpenWineryModal}
+              >
+                <Text style={styles.wineryButtonText}>
+                  {wineryData ? '✏️ Weingut-Profil bearbeiten' : '➕ Weingut-Profil erstellen'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Bestellhistorie */}
+          {!isEditing && (
+            <View style={styles.infoCard}>
+              <Text style={styles.cardTitle}>🛍️ Meine Bestellungen</Text>
+              {isLoadingOrders ? (
+                <Text style={styles.infoText}>Lade Bestellungen...</Text>
+              ) : orders.length === 0 ? (
+                <Text style={styles.infoText}>Noch keine Bestellungen</Text>
+              ) : (
+                <>
+                  {orders.slice(0, 5).map((order) => (
+                    <TouchableOpacity
+                      key={order.id}
+                      style={styles.orderItem}
+                      onPress={() => {
+                        setSelectedOrder(order);
+                        setIsOrderModalVisible(true);
+                      }}
+                    >
+                      <View style={styles.orderItemHeader}>
+                        <Text style={styles.orderItemId}>Bestellung #{order.id.substring(0, 8)}</Text>
+                        <View style={[styles.orderStatusBadge, { backgroundColor: getStatusColor(order.status) }]}>
+                          <Text style={styles.orderStatusBadgeText}>{getStatusLabel(order.status)}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.orderItemDate}>{formatDate(order.createdAt)}</Text>
+                      <Text style={styles.orderItemTotal}>{order.total?.toFixed(2) || 0} €</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {orders.length > 5 && (
+                    <Text style={styles.orderMoreText}>
+                      ... und {orders.length - 5} weitere Bestellungen
+                    </Text>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+
           {!isEditing && (
             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
               <Text style={styles.logoutText}>Abmelden</Text>
@@ -427,6 +987,282 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         </View>
         <Footer />
       </View>
+
+      {/* Bestell-Detail-Modal */}
+      <Modal
+        visible={isOrderModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setIsOrderModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                Bestellung #{selectedOrder?.id?.substring(0, 8)}
+              </Text>
+              <TouchableOpacity onPress={() => setIsOrderModalVisible(false)}>
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {selectedOrder && (
+              <ScrollView style={styles.modalContent}>
+                <View style={styles.orderDetailSection}>
+                  <Text style={styles.orderDetailLabel}>Status</Text>
+                  <View style={[styles.orderStatusBadge, { backgroundColor: getStatusColor(selectedOrder.status) }]}>
+                    <Text style={styles.orderStatusBadgeText}>{getStatusLabel(selectedOrder.status)}</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.orderDetailSection}>
+                  <Text style={styles.orderDetailLabel}>Bestelldatum</Text>
+                  <Text style={styles.orderDetailText}>{formatDate(selectedOrder.createdAt)}</Text>
+                </View>
+                
+                <View style={styles.orderDetailSection}>
+                  <Text style={styles.orderDetailLabel}>Artikel</Text>
+                  {selectedOrder.items?.map((item, index) => (
+                    <View key={index} style={styles.orderItemDetail}>
+                      <Text style={styles.orderItemDetailName}>
+                        {item.name} {item.variantName ? `(${item.variantName})` : ''}
+                      </Text>
+                      <Text style={styles.orderItemDetailQuantity}>Menge: {item.quantity}</Text>
+                      <Text style={styles.orderItemDetailPrice}>
+                        {item.priceGross?.toFixed(2) || (item.price * 1.19).toFixed(2)} €
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                
+                <View style={styles.orderDetailSection}>
+                  <Text style={styles.orderDetailLabel}>Preisübersicht</Text>
+                  <View style={styles.orderPriceRow}>
+                    <Text style={styles.orderPriceLabel}>Zwischensumme (netto):</Text>
+                    <Text style={styles.orderPriceValue}>{selectedOrder.subtotal?.toFixed(2) || 0} €</Text>
+                  </View>
+                  <View style={styles.orderPriceRow}>
+                    <Text style={styles.orderPriceLabel}>MwSt. (19%):</Text>
+                    <Text style={styles.orderPriceValue}>{selectedOrder.tax?.toFixed(2) || 0} €</Text>
+                  </View>
+                  <View style={styles.orderPriceRow}>
+                    <Text style={styles.orderPriceLabel}>Versandkosten:</Text>
+                    <Text style={styles.orderPriceValue}>
+                      {selectedOrder.shippingCostFree ? '0,00 € (versandkostenfrei)' : `${selectedOrder.shippingCost?.toFixed(2) || 0} €`}
+                    </Text>
+                  </View>
+                  <View style={[styles.orderPriceRow, styles.orderTotalRow]}>
+                    <Text style={styles.orderTotalLabel}>Gesamt:</Text>
+                    <Text style={styles.orderTotalValue}>{selectedOrder.total?.toFixed(2) || 0} €</Text>
+                  </View>
+                </View>
+                
+                {selectedOrder.shippingAddress && (
+                  <View style={styles.orderDetailSection}>
+                    <Text style={styles.orderDetailLabel}>Lieferadresse</Text>
+                    <Text style={styles.orderDetailText}>
+                      {selectedOrder.shippingAddress.street}{'\n'}
+                      {selectedOrder.shippingAddress.zipCode} {selectedOrder.shippingAddress.city}{'\n'}
+                      {selectedOrder.shippingAddress.country}
+                    </Text>
+                  </View>
+                )}
+                
+                <View style={styles.orderDetailSection}>
+                  <Text style={styles.orderDetailLabel}>Zahlungsmethode</Text>
+                  <Text style={styles.orderDetailText}>{selectedOrder.paymentMethod || 'PayPal'}</Text>
+                  {selectedOrder.paymentId && (
+                    <Text style={styles.orderDetailTextSmall}>
+                      Transaction ID: {selectedOrder.paymentId}
+                    </Text>
+                  )}
+                </View>
+              </ScrollView>
+            )}
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonDanger]}
+                onPress={async () => {
+                  if (!selectedOrder) return;
+                  
+                  Alert.alert(
+                    'Bestellung löschen',
+                    'Möchten Sie diese Bestellung wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.',
+                    [
+                      { text: 'Abbrechen', style: 'cancel' },
+                      {
+                        text: 'Löschen',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            const currentUser = getCurrentUser();
+                            if (!currentUser || !currentUser.uid) {
+                              Alert.alert('Fehler', 'Kein eingeloggter User gefunden');
+                              return;
+                            }
+                            
+                            await deleteOrder(selectedOrder.id, currentUser.uid);
+                            setIsOrderModalVisible(false);
+                            setSelectedOrder(null);
+                            await loadOrders();
+                            Alert.alert('Erfolg', 'Bestellung wurde erfolgreich gelöscht');
+                          } catch (error) {
+                            console.error('❌ Fehler beim Löschen der Bestellung:', error);
+                            Alert.alert('Fehler', `Bestellung konnte nicht gelöscht werden: ${error.message}`);
+                          }
+                        }
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.modalButtonTextDanger}>🗑️ Bestellung löschen</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Weingut-Profil Modal */}
+      <Modal
+        visible={isWineryModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={handleCloseWineryModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {wineryData ? 'Weingut-Profil bearbeiten' : 'Weingut-Profil erstellen'}
+              </Text>
+              <TouchableOpacity onPress={handleCloseWineryModal}>
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.inputLabel}>Name des Weinguts *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="z.B. Weingut Müller"
+                value={wineryFormData.name}
+                onChangeText={(value) => setWineryFormData({ ...wineryFormData, name: value })}
+              />
+
+              <Text style={styles.inputLabel}>Beschreibung</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Beschreiben Sie Ihr Weingut..."
+                value={wineryFormData.description}
+                onChangeText={(value) => setWineryFormData({ ...wineryFormData, description: value })}
+                multiline
+                numberOfLines={4}
+              />
+
+              <Text style={styles.inputLabel}>Region</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="z.B. Mosel, Rheingau"
+                value={wineryFormData.region}
+                onChangeText={(value) => setWineryFormData({ ...wineryFormData, region: value })}
+              />
+
+              <Text style={styles.inputLabel}>Adresse</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Straße, PLZ Ort"
+                value={wineryFormData.address}
+                onChangeText={(value) => setWineryFormData({ ...wineryFormData, address: value })}
+              />
+
+              <Text style={styles.inputLabel}>Website</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="https://www.example.com"
+                value={wineryFormData.website}
+                onChangeText={(value) => setWineryFormData({ ...wineryFormData, website: value })}
+                keyboardType="url"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.inputLabel}>Kontakt-E-Mail</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="kontakt@weingut.de"
+                value={wineryFormData.contactEmail}
+                onChangeText={(value) => setWineryFormData({ ...wineryFormData, contactEmail: value })}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.inputLabel}>Telefon</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="+49 123 456789"
+                value={wineryFormData.phone}
+                onChangeText={(value) => setWineryFormData({ ...wineryFormData, phone: value })}
+                keyboardType="phone-pad"
+              />
+
+              <Text style={styles.inputLabel}>Bilder (max. 5)</Text>
+              <TouchableOpacity
+                style={styles.imagePickerButton}
+                onPress={handlePickWineryImages}
+                disabled={wineryFormData.images.length >= 5 || isUploadingWineryImages}
+              >
+                <Text style={styles.imagePickerButtonText}>
+                  📷 Bilder auswählen ({wineryFormData.images.length}/5)
+                </Text>
+              </TouchableOpacity>
+
+              {wineryFormData.images.length > 0 && (
+                <View style={styles.imagesPreview}>
+                  {wineryFormData.images.map((image, index) => (
+                    <View key={index} style={styles.imagePreviewItem}>
+                      <OptimizedImage
+                        source={{ uri: image }}
+                        style={styles.imagePreview}
+                        resizeMode="cover"
+                      />
+                      <TouchableOpacity
+                        style={styles.removeImageButton}
+                        onPress={() => handleRemoveWineryImage(index)}
+                      >
+                        <Text style={styles.removeImageButtonText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {isUploadingWineryImages && (
+                <Text style={styles.uploadingText}>⏳ Bilder werden hochgeladen...</Text>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={handleCloseWineryModal}
+              >
+                <Text style={styles.modalButtonText}>Abbrechen</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={handleSaveWinery}
+                disabled={isUploadingWineryImages}
+              >
+                <Text style={styles.modalButtonText}>
+                  {isUploadingWineryImages ? '⏳ Speichern...' : '💾 Speichern'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
@@ -437,6 +1273,10 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
 }
 
 const styles = StyleSheet.create({
+  outerContainer: {
+    flex: 1,
+    backgroundColor: '#2c2c2c',
+  },
   container: {
     flex: 1,
     backgroundColor: '#2c2c2c', // Einheitlicher Hintergrund
@@ -472,13 +1312,17 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
-    borderBottomWidth: 0,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
   headerLeft: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 48,
+  },
+  profileSection: {
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoHeaderCenter: {
     flexDirection: 'row',
@@ -497,8 +1341,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -507,59 +1351,65 @@ const styles = StyleSheet.create({
     height: 40,
   },
   profileIconContainer: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  profileIconImage: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+  },
   profileIconText: {
     fontSize: 25,
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
-  profileSection: {
-    minWidth: 48,
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileBtpBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#DAA520',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  profileBtpText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2c2c2c',
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
     textAlign: 'center',
+    opacity: 0.85,
     letterSpacing: 0.5,
+    fontStyle: 'italic',
   },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    paddingTop: 25,
-    paddingBottom: 25,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
     backgroundColor: '#2c2c2c',
     position: 'relative',
     marginTop: 0,
-    minHeight: 70,
-    borderTopWidth: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
@@ -567,12 +1417,24 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
     marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -584,6 +1446,7 @@ const styles = StyleSheet.create({
   wishlistButton: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   wishlistHeart: {
     fontSize: 24,
@@ -593,7 +1456,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   profileActions: {
-    marginTop: 8,
+    marginTop: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -613,15 +1476,11 @@ const styles = StyleSheet.create({
     // Hintergrund und Border entfernt für elegantes Design
   },
   greeting: {
-    fontSize: 30,
-    fontWeight: '600',
-    color: '#DAA520', // Warmes Gold
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 0.5,
-    // Eleganter Gradient-Effekt durch Text-Shadow
-    textShadowColor: 'rgba(218, 165, 32, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   editButton: {
@@ -655,6 +1514,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     elevation: 2,
   },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 15,
+  },
   avatar: {
     width: 80,
     height: 80,
@@ -662,12 +1525,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#8B4513',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
   },
   avatarText: {
     fontSize: 32,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  avatarEditOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#a9c7cd',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  avatarEditText: {
+    fontSize: 14,
+  },
+  avatarHint: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 5,
+    marginBottom: 10,
   },
   userName: {
     fontSize: 24,
@@ -800,5 +1685,275 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  deleteImageButton: {
+    backgroundColor: '#F44336',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  deleteImageButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  wineryButton: {
+    backgroundColor: '#a9c7cd',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  wineryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c2c2c',
+  },
+  modalCloseButton: {
+    fontSize: 24,
+    color: '#666',
+    fontWeight: 'bold',
+  },
+  modalContent: {
+    maxHeight: 500,
+    padding: 20,
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  imagePickerButton: {
+    backgroundColor: '#f5f5f5',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  imagePickerButtonText: {
+    color: '#2c2c2c',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  imagesPreview: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 10,
+  },
+  imagePreviewItem: {
+    width: 100,
+    height: 100,
+    marginRight: 10,
+    marginBottom: 10,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeImageButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  uploadingText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 5,
+  },
+  modalButtonSecondary: {
+    backgroundColor: '#e0e0e0',
+  },
+  modalButtonPrimary: {
+    backgroundColor: '#a9c7cd',
+  },
+  modalButtonDanger: {
+    backgroundColor: '#F44336',
+  },
+  modalButtonText: {
+    color: '#2c2c2c',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonTextDanger: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  orderItem: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  orderItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  orderItemId: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2c2c2c',
+  },
+  orderStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  orderStatusBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  orderItemDate: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  orderItemTotal: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#a9c7cd',
+  },
+  orderMoreText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  orderDetailSection: {
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  orderDetailLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c2c2c',
+    marginBottom: 8,
+  },
+  orderDetailText: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+  },
+  orderDetailTextSmall: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+  },
+  orderItemDetail: {
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  orderItemDetailName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2c2c2c',
+    marginBottom: 4,
+  },
+  orderItemDetailQuantity: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  orderItemDetailPrice: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#a9c7cd',
+  },
+  orderPriceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  orderPriceLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  orderPriceValue: {
+    fontSize: 14,
+    color: '#2c2c2c',
+    fontWeight: '500',
+  },
+  orderTotalRow: {
+    borderTopWidth: 2,
+    borderTopColor: '#a9c7cd',
+    paddingTop: 12,
+    marginTop: 12,
+  },
+  orderTotalLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c2c2c',
+  },
+  orderTotalValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#a9c7cd',
   },
 });

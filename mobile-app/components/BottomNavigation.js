@@ -1,11 +1,16 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import NewsPopup from './NewsPopup';
 
-export default function BottomNavigation({ onNavigate, isLoggedIn = false, unreadCount = 0 }) {
+export default function BottomNavigation({ onNavigate, isLoggedIn = false, unreadCount = 0, onUpdateTourElementPosition = null }) {
   const [newsPopupVisible, setNewsPopupVisible] = useState(false);
   const [anchorLayout, setAnchorLayout] = useState(null);
   const infoTabRef = useRef(null);
+  
+  // Tour-Refs (isoliert, beeinflusst keine bestehende Funktionalität)
+  const tourWeinboerseRef = useRef(null);
+  const tourWeinregalRef = useRef(null);
+  const tourInfoBoxRef = useRef(null);
 
   const updateAnchorLayout = useCallback(() => {
     if (infoTabRef.current?.measureInWindow) {
@@ -15,6 +20,49 @@ export default function BottomNavigation({ onNavigate, isLoggedIn = false, unrea
       });
     }
   }, []);
+
+  // Tour: Element-Positionen messen und an App.js weitergeben (isoliert, beeinflusst keine bestehende Funktionalität)
+  useEffect(() => {
+    if (!onUpdateTourElementPosition) return;
+
+    const measureAndUpdate = () => {
+      try {
+        // Weinbörse-Button
+        if (tourWeinboerseRef.current) {
+          tourWeinboerseRef.current.measureInWindow((x, y, width, height) => {
+            onUpdateTourElementPosition('bottom-nav-weinboerse', { x, y, width, height });
+          });
+        }
+
+        // Weinregal-Button
+        if (tourWeinregalRef.current) {
+          tourWeinregalRef.current.measureInWindow((x, y, width, height) => {
+            onUpdateTourElementPosition('bottom-nav-weinregal', { x, y, width, height });
+          });
+        }
+
+        // InfoBox-Button
+        if (tourInfoBoxRef.current) {
+          tourInfoBoxRef.current.measureInWindow((x, y, width, height) => {
+            onUpdateTourElementPosition('bottom-nav-infobox', { x, y, width, height });
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ Tour: Fehler beim Messen der BottomNavigation-Elemente:', error);
+      }
+    };
+
+    // Warte länger, damit Elemente definitiv gerendert sind, dann messe mehrmals (mit Delays)
+    const timeoutId1 = setTimeout(measureAndUpdate, 800);
+    const timeoutId2 = setTimeout(measureAndUpdate, 1500);
+    const timeoutId3 = setTimeout(measureAndUpdate, 2500);
+
+    return () => {
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+      clearTimeout(timeoutId3);
+    };
+  }, [onUpdateTourElementPosition]); // Nur bei Funktions-Änderung oder Mount
   // Navigation-Handler: Wenn nicht eingeloggt, auf Login-Screen verweisen, sonst auf entsprechenden Screen
   const handleNavigate = (screen) => {
     // Spezielle Behandlung für Home-Button
@@ -59,6 +107,7 @@ export default function BottomNavigation({ onNavigate, isLoggedIn = false, unrea
       </TouchableOpacity>
 
       <TouchableOpacity 
+        ref={tourWeinboerseRef}
         style={styles.tab} 
         onPress={() => handleNavigate('weinboerse')}
       >
@@ -67,6 +116,7 @@ export default function BottomNavigation({ onNavigate, isLoggedIn = false, unrea
       </TouchableOpacity>
 
       <TouchableOpacity 
+        ref={tourWeinregalRef}
         style={styles.tab} 
         onPress={() => handleNavigate('mein-weinregal')}
       >
@@ -75,7 +125,10 @@ export default function BottomNavigation({ onNavigate, isLoggedIn = false, unrea
       </TouchableOpacity>
 
       <TouchableOpacity 
-        ref={infoTabRef}
+        ref={(ref) => {
+          infoTabRef.current = ref; // Bestehender Ref beibehalten
+          tourInfoBoxRef.current = ref; // Tour-Ref setzen
+        }}
         style={styles.tab} 
         onPress={() => {
           if (!isLoggedIn) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, ScrollView, Platform, ImageBackground, Modal } from 'react-native';
 import OptimizedImage from './components/OptimizedImage';
 import Footer from './Footer';
@@ -15,7 +15,42 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
   const [previousWines, setPreviousWines] = useState([]);
   const [dropdownVisible, setDropdownVisible] = useState(false);
   const [isLoadingWines, setIsLoadingWines] = useState(false);
-  const [btp, setBtp] = useState(0);
+  
+  // Refs für Tastatur-Navigation
+  const scrollViewRef = useRef(null);
+  const wineNameInputRef = useRef(null);
+  const wineryInputRef = useRef(null);
+  const websiteInputRef = useRef(null);
+  const vintageInputRef = useRef(null);
+  const regionInputRef = useRef(null);
+  const grapeVarietyInputRef = useRef(null);
+  const tasteProfileInputRef = useRef(null);
+  const priceInputRef = useRef(null);
+  const descriptionInputRef = useRef(null);
+  
+  // Funktion zum automatischen Scrollen zum Input-Feld
+  const scrollToInput = (inputRef) => {
+    if (inputRef.current && scrollViewRef.current) {
+      inputRef.current.measureLayout(
+        scrollViewRef.current,
+        (x, y, width, height) => {
+          scrollViewRef.current?.scrollTo({
+            y: y - 50, // 50px Offset oben für bessere Sichtbarkeit
+            animated: true,
+          });
+        },
+        () => {
+          // Fallback: Wenn measureLayout fehlschlägt, verwende measureInWindow
+          inputRef.current.measureInWindow((x, y, width, height) => {
+            scrollViewRef.current?.scrollTo({
+              y: y - 100, // Offset für bessere Sichtbarkeit
+              animated: true,
+            });
+          });
+        }
+      );
+    }
+  };
   const [formData, setFormData] = useState({
     wineName: '',
     winery: '',
@@ -26,7 +61,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
     tasteProfile: '',
     price: '',
     description: '',
-    labelImage: null,
+    labelImages: [], // Array für mehrere Bilder (max 5)
   });
 
   // Lade bereits eingestellte Weine beim Öffnen des Screens
@@ -40,10 +75,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
       const currentUser = getCurrentUser();
       if (!currentUser || !currentUser.uid) {
         setIsLoadingWines(false);
-        setBtp(0);
         return;
       }
-      setBtp(currentUser?.btp ?? 0);
 
       // WICHTIG: Lade Weine aus der Historie (AsyncStorage), nicht aus dem aktuellen Weinregal
       // Die Historie enthält alle Weine, die jemals eingestellt wurden, auch wenn sie gelöscht wurden
@@ -105,7 +138,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
       tasteProfile: wine.tasteProfile || '',
       price: wine.price ? String(wine.price) : '',
       description: wine.description || '',
-      labelImage: wine.labelImage || null,
+      labelImages: wine.labelImages || (wine.labelImage ? [wine.labelImage] : []), // Rückwärtskompatibilität
     });
     setDropdownVisible(false);
   };
@@ -153,8 +186,16 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const pickImage = async () => {
+  const pickImages = async () => {
     try {
+      const currentImages = formData.labelImages || [];
+      const remainingSlots = 5 - currentImages.length;
+      
+      if (remainingSlots <= 0) {
+        Alert.alert('Maximum erreicht', 'Sie können maximal 5 Bilder hinzufügen.');
+        return;
+      }
+
       console.log('🖼️ Bild-Auswahl gestartet');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -164,15 +205,18 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
 
       console.log('📸 Öffne Bild-Auswahl...');
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true, // Mehrere Bilder auswählen
+        allowsEditing: false, // Bei Mehrfachauswahl kein Editing
         quality: 1,
+        selectionLimit: remainingSlots, // Maximal so viele wie noch Platz ist
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        console.log('✅ Bild ausgewählt:', result.assets[0].uri);
-        updateFormData('labelImage', result.assets[0].uri);
+        const newImages = result.assets.map(asset => asset.uri);
+        const updatedImages = [...currentImages, ...newImages].slice(0, 5); // Maximal 5 Bilder
+        console.log(`✅ ${newImages.length} Bild(er) ausgewählt. Gesamt: ${updatedImages.length}/5`);
+        updateFormData('labelImages', updatedImages);
       } else {
         console.log('ℹ️ Bild-Auswahl abgebrochen');
       }
@@ -182,8 +226,13 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
     }
   };
 
+  const removeImage = (index) => {
+    const updatedImages = formData.labelImages.filter((_, i) => i !== index);
+    updateFormData('labelImages', updatedImages);
+  };
+
   const handleSave = async () => {
-    const { wineName, winery, vintage, region, grapeVariety, price, description, labelImage } = formData;
+    const { wineName, winery, vintage, region, grapeVariety, price, description, labelImages } = formData;
     
     if (!wineName || !winery || !vintage || !region || !grapeVariety) {
       Alert.alert('Fehler', 'Bitte füllen Sie alle Pflichtfelder aus');
@@ -207,9 +256,10 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
         grapeVariety: grapeVariety,
         price: price ? parseFloat(price.replace(',', '.')) : null,
         description: description || '',
-        labelImage: labelImage,
+        labelImages: labelImages || [], // Array von Bildern
         ownerId: currentUserId,
         owner: currentUserName, // Besitzer-Name hinzufügen
+        ownerZipCode: currentUser?.zipCode || null, // PLZ des Besitzers für Entfernungsberechnung
         status: 'private', // Standard: privat
         availableForTrade: false
       });
@@ -240,7 +290,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
               tasteProfile: formData.tasteProfile || '',
               price: price ? parseFloat(price.replace(',', '.')) : null,
               description: description || '',
-              labelImage: labelImage || null,
+              labelImages: labelImages || [],
               createdAt: new Date().toISOString(),
             });
             
@@ -259,7 +309,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                 tasteProfile: formData.tasteProfile || '',
                 price: price ? parseFloat(price.replace(',', '.')) : null,
                 description: description || '',
-                labelImage: labelImage || null,
+                labelImages: labelImages || [],
               }];
               // Sortiere nach Name
               updated.sort((a, b) => {
@@ -287,7 +337,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
         tasteProfile: '',
         price: '',
         description: '',
-        labelImage: null,
+        labelImages: [],
       });
       
       // Direkt zu Mein Weinregal navigieren
@@ -335,12 +385,6 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                   <View style={styles.hamburgerLine} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.wishlistButton}
-                onPress={() => onNavigate('wunschliste')}
-              >
-                <Text style={styles.wishlistHeart}>♡</Text>
-              </TouchableOpacity>
             </View>
             
             {/* Bottle (Logo) Trade in der Mitte */}
@@ -366,10 +410,12 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                   <Text style={styles.profileIconText}>P</Text>
                 </View>
               </TouchableOpacity>
-              <View style={styles.profileBtpBadge}>
-                <Text style={styles.profileBtpText}>{`${btp ?? 0} BTP`}</Text>
-              </View>
             </View>
+          </View>
+          
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
           
           {/* Header mit Überschrift */}
@@ -381,10 +427,12 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
 
           {/* Content */}
           <ScrollView 
+            ref={scrollViewRef}
             style={styles.content} 
             contentContainerStyle={styles.scrollContentContainer}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
           >
             <View style={styles.dashboardContainer}>
               <Text style={styles.dashboardSubtitle}>Machen Sie bitte Angaben zu dem Wein, den Sie tauschen möchten.</Text>
@@ -441,28 +489,43 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Name des Weines *</Text>
                     <TextInput
+                      ref={wineNameInputRef}
                       style={styles.input}
                       value={formData.wineName}
                       onChangeText={(text) => updateFormData('wineName', text)}
                       placeholder="z.B. Riesling Spätlese"
                       placeholderTextColor="#999999"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        wineryInputRef.current?.focus();
+                        setTimeout(() => scrollToInput(wineryInputRef), 100);
+                      }}
+                      onFocus={() => scrollToInput(wineNameInputRef)}
                     />
                   </View>
 
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Weingut *</Text>
                     <TextInput
+                      ref={wineryInputRef}
                       style={styles.input}
                       value={formData.winery}
                       onChangeText={(text) => updateFormData('winery', text)}
                       placeholder="z.B. Weingut Müller"
                       placeholderTextColor="#999999"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        websiteInputRef.current?.focus();
+                        setTimeout(() => scrollToInput(websiteInputRef), 100);
+                      }}
+                      onFocus={() => scrollToInput(wineryInputRef)}
                     />
                   </View>
 
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Website des Weingutes</Text>
                     <TextInput
+                      ref={websiteInputRef}
                       style={styles.input}
                       value={formData.website}
                       onChangeText={(text) => updateFormData('website', text)}
@@ -470,6 +533,12 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                       placeholderTextColor="#999999"
                       keyboardType="url"
                       autoCapitalize="none"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        vintageInputRef.current?.focus();
+                        setTimeout(() => scrollToInput(vintageInputRef), 100);
+                      }}
+                      onFocus={() => scrollToInput(websiteInputRef)}
                     />
                   </View>
                 </View>
@@ -482,23 +551,37 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                     <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
                       <Text style={styles.label}>Jahrgang *</Text>
                       <TextInput
+                        ref={vintageInputRef}
                         style={styles.input}
                         value={formData.vintage}
                         onChangeText={(text) => updateFormData('vintage', text)}
                         placeholder="2020"
                         placeholderTextColor="#999999"
                         keyboardType="numeric"
+                        returnKeyType="next"
+                        onSubmitEditing={() => {
+                          regionInputRef.current?.focus();
+                          setTimeout(() => scrollToInput(regionInputRef), 100);
+                        }}
+                        onFocus={() => scrollToInput(vintageInputRef)}
                       />
                     </View>
                     
                     <View style={[styles.inputGroup, { flex: 2 }]}>
                       <Text style={styles.label}>Anbauregion *</Text>
                       <TextInput
+                        ref={regionInputRef}
                         style={styles.input}
                         value={formData.region}
                         onChangeText={(text) => updateFormData('region', text)}
                         placeholder="z.B. Mosel"
                         placeholderTextColor="#999999"
+                        returnKeyType="next"
+                        onSubmitEditing={() => {
+                          grapeVarietyInputRef.current?.focus();
+                          setTimeout(() => scrollToInput(grapeVarietyInputRef), 100);
+                        }}
+                        onFocus={() => scrollToInput(regionInputRef)}
                       />
                     </View>
                   </View>
@@ -506,40 +589,62 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Rebsorte *</Text>
                     <TextInput
+                      ref={grapeVarietyInputRef}
                       style={styles.input}
                       value={formData.grapeVariety}
                       onChangeText={(text) => updateFormData('grapeVariety', text)}
                       placeholder="z.B. Riesling"
                       placeholderTextColor="#999999"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        tasteProfileInputRef.current?.focus();
+                        setTimeout(() => scrollToInput(tasteProfileInputRef), 100);
+                      }}
+                      onFocus={() => scrollToInput(grapeVarietyInputRef)}
                     />
                   </View>
 
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Geschmacksrichtung</Text>
                     <TextInput
+                      ref={tasteProfileInputRef}
                       style={styles.input}
                       value={formData.tasteProfile}
                       onChangeText={(text) => updateFormData('tasteProfile', text)}
                       placeholder="z.B. trocken, halbtrocken, süß"
                       placeholderTextColor="#999999"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        priceInputRef.current?.focus();
+                        setTimeout(() => scrollToInput(priceInputRef), 100);
+                      }}
+                      onFocus={() => scrollToInput(tasteProfileInputRef)}
                     />
                   </View>
 
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Preis (optional)</Text>
                     <TextInput
+                      ref={priceInputRef}
                       style={styles.input}
                       value={formData.price}
                       onChangeText={(text) => updateFormData('price', text)}
                       placeholder="z.B. 15.99"
                       placeholderTextColor="#999999"
                       keyboardType="decimal-pad"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        descriptionInputRef.current?.focus();
+                        setTimeout(() => scrollToInput(descriptionInputRef), 100);
+                      }}
+                      onFocus={() => scrollToInput(priceInputRef)}
                     />
                   </View>
 
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Beschreibung</Text>
                     <TextInput
+                      ref={descriptionInputRef}
                       style={[styles.input, styles.textArea]}
                       value={formData.description}
                       onChangeText={(text) => updateFormData('description', text)}
@@ -547,31 +652,63 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                       placeholderTextColor="#999999"
                       multiline
                       numberOfLines={4}
+                      returnKeyType="done"
+                      onFocus={() => scrollToInput(descriptionInputRef)}
                     />
                   </View>
                 </View>
 
-                {/* Etikett-Foto */}
+                {/* Etikett-Fotos (max 5) */}
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Etikett-Foto</Text>
+                  <Text style={styles.sectionTitle}>Etikett-Fotos (max. 5)</Text>
                   
-                  <TouchableOpacity 
-                    style={styles.imageButton} 
-                    onPress={pickImage}
-                    activeOpacity={0.7}
-                  >
-                    {formData.labelImage ? (
-                      <OptimizedImage source={{ uri: formData.labelImage }} 
-                        style={styles.imagePreview}
-                        resizeMode="cover"
-                      />
-                    ) : (
+                  {/* Bildergalerie */}
+                  {formData.labelImages && formData.labelImages.length > 0 && (
+                    <ScrollView 
+                      horizontal 
+                      style={styles.imageGallery}
+                      showsHorizontalScrollIndicator={true}
+                      contentContainerStyle={styles.imageGalleryContent}
+                    >
+                      {formData.labelImages.map((imageUri, index) => (
+                        <View key={index} style={styles.imageItem}>
+                          <OptimizedImage 
+                            source={{ uri: imageUri }} 
+                            style={styles.imagePreview}
+                            resizeMode="cover"
+                          />
+                          <TouchableOpacity 
+                            style={styles.removeImageButton}
+                            onPress={() => removeImage(index)}
+                          >
+                            <Text style={styles.removeImageText}>✕</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+                  
+                  {/* Add Button */}
+                  {(!formData.labelImages || formData.labelImages.length < 5) && (
+                    <TouchableOpacity 
+                      style={styles.imageButton} 
+                      onPress={pickImages}
+                      activeOpacity={0.7}
+                    >
                       <View style={styles.imagePlaceholder}>
                         <Text style={styles.imagePlaceholderText}>📷</Text>
-                        <Text style={styles.imagePlaceholderLabel}>Etikett-Foto hinzufügen</Text>
+                        <Text style={styles.imagePlaceholderLabel}>
+                          {formData.labelImages && formData.labelImages.length > 0 
+                            ? `Weitere Fotos hinzufügen (${formData.labelImages.length}/5)`
+                            : 'Etikett-Fotos hinzufügen (max. 5)'}
+                        </Text>
                       </View>
-                    )}
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                  )}
+                  
+                  {formData.labelImages && formData.labelImages.length >= 5 && (
+                    <Text style={styles.maxImagesText}>Maximum von 5 Bildern erreicht</Text>
+                  )}
                 </View>
 
                 {/* Speichern Button */}
@@ -601,7 +738,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c',
   },
   contentContainer: {
     flex: 1,
@@ -614,7 +751,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
     borderBottomWidth: 0,
   },
   logoHeaderCenter: {
@@ -634,8 +771,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -670,10 +807,25 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
   profileBtpBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    backgroundColor: '#DAA520',
+    backgroundColor: '#a9c7cd',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)',
@@ -695,26 +847,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    paddingTop: 25,
-    paddingBottom: 25,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
     backgroundColor: '#2c2c2c',
     position: 'relative',
     marginTop: 0,
-    minHeight: 70,
-    borderTopWidth: 0,
-    borderBottomWidth: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   hamburgerContainer: {
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
     marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -784,14 +950,11 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   greeting: {
-    fontSize: 30,
-    fontWeight: '600',
-    color: '#DAA520',
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 0.5,
-    textShadowColor: 'rgba(218, 165, 32, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   // Hamburger Button Styles entfernt - wird durch DynamicHamburgerMenu ersetzt

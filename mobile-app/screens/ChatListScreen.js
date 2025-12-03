@@ -29,7 +29,6 @@ export default function ChatListScreen({ onNavigate, onLogout = () => {}, chats 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [wineImages, setWineImages] = useState({}); // { chatId: { wineFromImage: string, wineToImage: string } }
-  const [btp, setBtp] = useState(() => getCurrentUser()?.btp ?? 0);
 
   // Filtere Chats: Nur Chats anzeigen, bei denen der aktuelle User ein Teilnehmer ist
   // WICHTIG: 1-zu-1 Kommunikation darf nicht von Dritten (auch nicht Admins) eingesehen werden
@@ -127,9 +126,8 @@ export default function ChatListScreen({ onNavigate, onLogout = () => {}, chats 
       .filter((id, index, self) => self.indexOf(id) === index); // Eindeutige IDs
   }, [allChats]);
 
-  // Aktualisiere BTP bei Initialisierung
+  // Initialisierung
   useEffect(() => {
-    setBtp(getCurrentUser()?.btp ?? 0);
   }, []);
 
   // Lade Weinbilder für alle Chats mit Trade-Request
@@ -515,12 +513,6 @@ export default function ChatListScreen({ onNavigate, onLogout = () => {}, chats 
                   <View style={styles.hamburgerLine} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.wishlistButton}
-                onPress={() => onNavigate('wunschliste')}
-              >
-                <Text style={styles.wishlistHeart}>♡</Text>
-              </TouchableOpacity>
             </View>
             
             {/* Bottle (Logo) Trade in der Mitte */}
@@ -546,13 +538,15 @@ export default function ChatListScreen({ onNavigate, onLogout = () => {}, chats 
                   <Text style={styles.profileIconText}>P</Text>
                 </View>
               </TouchableOpacity>
-              <View style={styles.profileBtpBadge}>
-                <Text style={styles.profileBtpText}>{`${btp ?? 0} BTP`}</Text>
-              </View>
             </View>
           </View>
           
-          {/* Header mit Überschrift */}
+                    {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+          </View>
+          
+{/* Header mit Überschrift */}
           <View style={styles.header}>
             <View style={styles.headerCenter}>
               <View style={styles.greetingContainer}>
@@ -683,7 +677,7 @@ export default function ChatListScreen({ onNavigate, onLogout = () => {}, chats 
                               
                               {/* Tausch-Icon in der Mitte */}
                               <View style={styles.tradeIconContainer}>
-                                <MaterialIcons name="swap-horiz" size={32} color="#DAA520" />
+                                <MaterialIcons name="swap-horiz" size={32} color="#a9c7cd" />
                               </View>
                               
                               {/* Rechtes Weinbild (wineTo) */}
@@ -1014,8 +1008,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
-    borderBottomWidth: 0,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
   logoHeaderCenter: {
     flexDirection: 'row',
@@ -1034,8 +1027,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1049,16 +1042,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileIconContainer: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
@@ -1070,33 +1067,35 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
-  profileBtpBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#DAA520',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  profileBtpText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2c2c2c',
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
     textAlign: 'center',
+    opacity: 0.85,
     letterSpacing: 0.5,
+    fontStyle: 'italic',
   },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    paddingTop: 25,
-    paddingBottom: 25,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
     backgroundColor: '#2c2c2c',
     position: 'relative',
     marginTop: 0,
-    minHeight: 70,
-    borderTopWidth: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
@@ -1104,12 +1103,24 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
     marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -1126,6 +1137,7 @@ const styles = StyleSheet.create({
   wishlistButton: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   wishlistHeart: {
     fontSize: 24,
@@ -1142,15 +1154,11 @@ const styles = StyleSheet.create({
     // Hintergrund und Border entfernt für elegantes Design
   },
   greeting: {
-    fontSize: 30,
-    fontWeight: '600',
-    color: '#DAA520', // Warmes Gold
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 0.5,
-    // Eleganter Gradient-Effekt durch Text-Shadow
-    textShadowColor: 'rgba(218, 165, 32, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   headerRight: {
@@ -1231,7 +1239,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0, 0, 0, 0.7)', // Wird dynamisch überschrieben
     padding: 0, // Kein Padding innerhalb des Containers - Bild soll bis zum Rand gehen
     // Verbesserte Schatten für Tiefe
-    shadowColor: '#DAA520', // Warmes Gold Schatten
+    shadowColor: '#a9c7cd', // Warmes Gold Schatten
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -1320,7 +1328,7 @@ const styles = StyleSheet.create({
   },
   placeholderTextOnly: {
     fontSize: 48,
-    color: '#DAA520',
+    color: '#a9c7cd',
     opacity: 0.6,
   },
   unreadBadgeOverlay: {
@@ -1386,7 +1394,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 2,
     borderColor: 'rgba(218, 165, 32, 0.5)',
-    shadowColor: '#DAA520',
+    shadowColor: '#a9c7cd',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -6,22 +6,61 @@ import {
   StyleSheet, 
   TouchableOpacity,
   Platform,
-  Alert
+  Alert,
+  Animated
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import OptimizedImage from './components/OptimizedImage';
-import Footer from './Footer';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
 import { getCurrentUser } from './services/testAuth';
+import { getUser } from './services/database-web';
 
-export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false, unreadNotifications = 0, unreadHints = 0, isLoggedIn = false }) {
+// Hilfsfunktion für Initialen
+const getInitials = (user) => {
+  if (user?.firstName && user?.lastName) {
+    return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+  } else if (user?.username) {
+    return user.username.substring(0, 2).toUpperCase();
+  } else if (user?.email) {
+    return user.email.substring(0, 2).toUpperCase();
+  }
+  return 'P';
+};
+
+export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false, unreadNotifications = 0, unreadHints = 0, isLoggedIn = false, wishlistMatchCount = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [userBtp, setUserBtp] = useState(0);
+  const [profileImage, setProfileImage] = useState(null);
 
   useEffect(() => {
     const user = getCurrentUser();
-    setUserBtp(user?.btp ?? 0);
+    if (user) {
+      setUserBtp(user?.btp ?? 0);
+      // Versuche zuerst aus getCurrentUser zu laden (schneller)
+      if (user.profilbild) {
+        setProfileImage(user.profilbild);
+      } else {
+        // Fallback: Lade aus Firestore
+        loadProfileImage(user.uid);
+      }
+    }
   }, []);
+
+  const loadProfileImage = async (userId) => {
+    try {
+      if (!userId) return;
+      const userData = await getUser(userId);
+      if (userData && userData.profilbild) {
+        setProfileImage(userData.profilbild);
+      } else {
+        setProfileImage(null);
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Laden des Profilbildes:', error);
+      setProfileImage(null);
+    }
+  };
   
   const communitySections = [
     {
@@ -29,50 +68,153 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
       title: 'Userinnen/User',
       icon: '👤',
       description: 'Community-Mitglieder entdecken',
+      color: '#4A90E2', // Blau
+      gradientColors: ['rgba(74, 144, 226, 0.15)', 'rgba(74, 144, 226, 0.05)'],
     },
     {
       id: 'schwarzes-brett',
       title: 'Schwarzes Brett',
       icon: '📋',
       description: 'Ankündigungen und Nachrichten',
-    },
-    {
-      id: 'statistiken',
-      title: 'Statistiken',
-      icon: '📊',
-      description: 'Community-Übersicht und Daten',
-    },
-    {
-      id: 'gaestebuch',
-      title: 'Gästebuch',
-      icon: '📝',
-      description: 'Hinterlasse deine Nachricht',
-    },
-    {
-      id: 'fotowand',
-      title: 'Fotowand',
-      icon: '📸',
-      description: 'Teile deine Wein-Momente',
-    },
-    {
-      id: 'umfragen',
-      title: 'Umfragen',
-      icon: '🗳️',
-      description: 'Nimm an Abstimmungen teil',
+      color: '#F5A623', // Orange
+      gradientColors: ['rgba(245, 166, 35, 0.15)', 'rgba(245, 166, 35, 0.05)'],
     },
     {
       id: 'weingueter',
       title: 'Weingüter',
       icon: '🏰',
       description: 'Entdecke Weingüter',
+      color: '#a9c7cd', // Gold
+      gradientColors: ['rgba(218, 165, 32, 0.15)', 'rgba(218, 165, 32, 0.05)'],
+    },
+    {
+      id: 'statistiken',
+      title: 'Statistiken',
+      icon: '📊',
+      description: 'Ranglisten und Statistiken',
+      color: '#9C27B0', // Lila
+      gradientColors: ['rgba(156, 39, 176, 0.15)', 'rgba(156, 39, 176, 0.05)'],
     }
   ];
 
   const handleSectionPress = (section) => {
-    Alert.alert(
-      section.title,
-      `${section.description}\n\nDiese Funktion wird bald verfügbar sein!`,
-      [{ text: 'OK' }]
+    if (section.id === 'userinnen') {
+      // Navigiere zum UserScreen
+      if (onNavigate) {
+        onNavigate('users');
+      }
+    } else if (section.id === 'schwarzes-brett') {
+      // Navigiere zum SchwarzesBrettScreen
+      if (onNavigate) {
+        onNavigate('schwarzes-brett');
+      }
+    } else if (section.id === 'weingueter') {
+      // Navigiere zum WeingueterScreen
+      if (onNavigate) {
+        onNavigate('weingueter');
+      }
+    } else if (section.id === 'statistiken') {
+      // Navigiere zum StatistikScreen
+      if (onNavigate) {
+        onNavigate('statistiken');
+      }
+    } else {
+      Alert.alert(
+        section.title,
+        `${section.description}\n\nDiese Funktion wird bald verfügbar sein!`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Komponente für moderne Community-Card
+  const ModernCommunityCard = ({ section, isFullWidth = false }) => {
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    const handlePressIn = () => {
+      Animated.spring(scaleAnim, {
+        toValue: 0.95,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }).start();
+    };
+
+    const handlePressOut = () => {
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }).start();
+    };
+
+    const handlePress = () => {
+      handleSectionPress(section);
+    };
+
+    if (isFullWidth) {
+      return (
+        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            onPress={handlePress}
+            style={styles.modernCardFullWidth}
+          >
+            <LinearGradient
+              colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.glassmorphismBackgroundFullWidth}
+            >
+              <View style={styles.modernCardContent}>
+                <View style={[styles.iconCircle, styles.iconCircleHorizontal, { backgroundColor: `${section.color}20` }]}>
+                  <Text style={styles.modernIcon}>{section.icon}</Text>
+                </View>
+                <View style={styles.modernCardTextContainer}>
+                  <Text style={styles.modernCardTitle}>{section.title}</Text>
+                  <Text style={styles.modernCardDescription}>{section.description}</Text>
+                </View>
+                <View style={styles.arrowContainer}>
+                  <Text style={styles.arrowIcon}>→</Text>
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+      );
+    }
+
+    return (
+      <Animated.View style={[{ flex: 1, marginHorizontal: 5 }, { transform: [{ scale: scaleAnim }] }]}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onPress={handlePress}
+          style={styles.modernCard}
+        >
+          <LinearGradient
+            colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.glassmorphismBackground}
+          >
+            <View style={styles.modernCardContentVertical}>
+              <View style={[styles.iconCircle, { backgroundColor: `${section.color}20` }]}>
+                <Text style={styles.modernIcon}>{section.icon}</Text>
+              </View>
+              <Text style={styles.modernCardTitle}>{section.title}</Text>
+              <Text style={styles.modernCardDescription}>{section.description}</Text>
+              <View style={styles.arrowContainerVertical}>
+                <Text style={styles.arrowIcon}>→</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
     );
   };
 
@@ -111,12 +253,6 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
                 <View style={styles.hamburgerLine} />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.wishlistButton}
-              onPress={() => onNavigate('wunschliste')}
-            >
-              <Text style={styles.wishlistHeart}>♡</Text>
-            </TouchableOpacity>
           </View>
           
           {/* Bottle (Logo) Trade in der Mitte */}
@@ -138,14 +274,26 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
               style={styles.profileIconContainer}
               onPress={() => onNavigate('profil')}
             >
-              <View style={styles.profileIconCircle}>
-                <Text style={styles.profileIconText}>P</Text>
-              </View>
+              {profileImage ? (
+                <OptimizedImage
+                  source={{ uri: profileImage }}
+                  style={styles.profileIconImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.profileIconCircle}>
+                  <Text style={styles.profileIconText}>
+                    {getInitials(getCurrentUser())}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
-            <View style={styles.profileBtpBadge}>
-              <Text style={styles.profileBtpText}>{`${userBtp} BTP`}</Text>
-            </View>
           </View>
+        </View>
+        
+        {/* Tagline unter dem Logo-Header */}
+        <View style={styles.taglineContainer}>
+          <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
         </View>
         
         {/* Header mit Überschrift */}
@@ -157,61 +305,23 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
           
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.dashboardContainer}>
-              {/* Community Kacheln */}
+              {/* Community Kacheln - Modernisiert */}
               <View style={styles.tilesGrid}>
                 {/* Zeile 1 */}
                 <View style={styles.tilesRow}>
-                  <TouchableOpacity style={[styles.tile, styles.centeredTile]} onPress={() => handleSectionPress(communitySections[0])}>
-                    <Text style={styles.tileIcon}>{communitySections[0].icon}</Text>
-                    <Text style={styles.tileTitle}>{communitySections[0].title}</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={[styles.tile, styles.centeredTile]} onPress={() => handleSectionPress(communitySections[1])}>
-                    <Text style={styles.tileIcon}>{communitySections[1].icon}</Text>
-                    <Text style={styles.tileTitle}>{communitySections[1].title}</Text>
-                  </TouchableOpacity>
+                  <ModernCommunityCard section={communitySections[0]} />
+                  <ModernCommunityCard section={communitySections[1]} />
                 </View>
 
                 {/* Zeile 2 */}
                 <View style={styles.tilesRow}>
-                  <TouchableOpacity style={[styles.tile, styles.centeredTile]} onPress={() => handleSectionPress(communitySections[2])}>
-                    <Text style={styles.tileIcon}>{communitySections[2].icon}</Text>
-                    <Text style={styles.tileTitle}>{communitySections[2].title}</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={[styles.tile, styles.centeredTile]} onPress={() => handleSectionPress(communitySections[3])}>
-                    <Text style={styles.tileIcon}>{communitySections[3].icon}</Text>
-                    <Text style={styles.tileTitle}>{communitySections[3].title}</Text>
-                  </TouchableOpacity>
+                  <ModernCommunityCard section={communitySections[2]} />
+                  <ModernCommunityCard section={communitySections[3]} />
                 </View>
-
-                {/* Zeile 3 */}
-                <View style={styles.tilesRow}>
-                  <TouchableOpacity style={[styles.tile, styles.centeredTile]} onPress={() => handleSectionPress(communitySections[4])}>
-                    <Text style={styles.tileIcon}>{communitySections[4].icon}</Text>
-                    <Text style={styles.tileTitle}>{communitySections[4].title}</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={[styles.tile, styles.centeredTile]} onPress={() => handleSectionPress(communitySections[5])}>
-                    <Text style={styles.tileIcon}>{communitySections[5].icon}</Text>
-                    <Text style={styles.tileTitle}>{communitySections[5].title}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Zeile 4 - Volle Breite */}
-                <TouchableOpacity style={[styles.tileFullWidth, styles.centeredTile]} onPress={() => handleSectionPress(communitySections[6])}>
-                  <View style={styles.tileFullContent}>
-                    <Text style={styles.tileIcon}>{communitySections[6].icon}</Text>
-                    <View style={styles.tileFullText}>
-                      <Text style={styles.tileTitle}>{communitySections[6].title}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
               </View>
             </View>
           </ScrollView>
         </View>
-      <Footer />
       
       {/* Fixed Bottom Navigation */}
       <BottomNavigation
@@ -247,7 +357,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
   headerLeft: {
     alignItems: 'center',
@@ -271,8 +381,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -281,26 +391,50 @@ const styles = StyleSheet.create({
     height: 40,
   },
   profileIconContainer: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  profileIconImage: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+  },
   profileIconText: {
     fontSize: 18,
     color: '#FFFFFF',
     fontWeight: 'bold',
+  },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
   },
   profileSection: {
     minWidth: 48,
@@ -310,7 +444,7 @@ const styles = StyleSheet.create({
   profileBtpBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    backgroundColor: '#DAA520',
+    backgroundColor: '#a9c7cd',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)',
@@ -334,7 +468,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginTop: 0,
     minHeight: 60,
-    borderTopWidth: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
@@ -342,12 +477,24 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
     marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -359,6 +506,10 @@ const styles = StyleSheet.create({
   wishlistButton: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  wishlistHeartContainer: {
+    position: 'relative',
   },
   wishlistHeart: {
     fontSize: 24,
@@ -366,6 +517,28 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.4)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+  },
+  wishlistBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FF4444',
+    borderRadius: 12,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 1000,
+    elevation: 10,
+  },
+  wishlistBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    paddingHorizontal: 4,
   },
   headerCenter: {
     flex: 1,
@@ -404,15 +577,11 @@ const styles = StyleSheet.create({
     color: '#2c2c2c', // Dunkler Text
   },
   greeting: {
-    fontSize: 30,
-    fontWeight: '600',
-    color: '#DAA520', // Warmes Gold
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 0.5,
-    // Eleganter Gradient-Effekt durch Text-Shadow
-    textShadowColor: 'rgba(218, 165, 32, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   content: {
@@ -429,6 +598,118 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 15,
   },
+  // Moderne Glassmorphism Cards
+  modernCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+    minHeight: 240, // Mindesthöhe für gleichmäßige Cards
+  },
+  modernCardFullWidth: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 5,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  glassmorphismBackground: {
+    borderRadius: 20,
+    padding: 20, // Reduziertes Padding
+    paddingVertical: 18, // Weniger vertikales Padding
+    flex: 1, // Nimmt verfügbaren Platz ein
+  },
+  glassmorphismBackgroundFullWidth: {
+    borderRadius: 20,
+    padding: 20, // Reduziertes Padding für Full-Width
+    paddingVertical: 18, // Weniger vertikales Padding
+  },
+  modernCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 0, // Keine Mindesthöhe für Full-Width
+  },
+  modernCardContentVertical: {
+    alignItems: 'center',
+    justifyContent: 'flex-start', // Startet oben
+    flex: 1, // Nimmt verfügbaren Platz ein
+    paddingTop: 4, // Kleiner Abstand oben
+  },
+  iconCircle: {
+    width: 70, // Etwas kleiner
+    height: 70,
+    borderRadius: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12, // Reduzierter Abstand
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  iconCircleHorizontal: {
+    marginBottom: 0,
+    marginRight: 0,
+  },
+  modernIcon: {
+    fontSize: 36, // Etwas kleiner für kompakteres Layout
+  },
+  modernCardTextContainer: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  modernCardTitle: {
+    fontSize: 18, // Etwas kleiner
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4, // Reduzierter Abstand
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  modernCardDescription: {
+    fontSize: 13, // Etwas kleiner
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: 18, // Kompaktere Zeilenhöhe
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  arrowContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  arrowContainerVertical: {
+    marginTop: 8, // Reduzierter Abstand
+    width: 32, // Etwas kleiner
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  arrowIcon: {
+    fontSize: 20,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  // Legacy Styles (werden nicht mehr verwendet, aber für Kompatibilität behalten)
   tile: {
     flex: 1,
     backgroundColor: 'rgba(60, 60, 60, 0.8)',
@@ -436,7 +717,7 @@ const styles = StyleSheet.create({
     padding: 20,
     marginHorizontal: 5,
     borderWidth: 1,
-    borderColor: '#FFFFFF', // Weiße Border
+    borderColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,

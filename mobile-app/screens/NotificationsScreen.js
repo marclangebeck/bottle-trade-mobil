@@ -264,7 +264,7 @@ export default function NotificationsScreen({
     }
     
     // Wenn es eine Umfrage-Benachrichtigung ist, zur Umfrage navigieren
-    if (notification.type === 'system' && (notification.title.includes('Umfrage') || notification.message.includes('BTP'))) {
+    if (notification.type === 'system' && notification.title.includes('Umfrage')) {
       console.log('Umfrage-Benachrichtigung gefunden!');
       console.log('Title:', notification.title);
       console.log('Message:', notification.message);
@@ -648,12 +648,12 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginTop: Platform.OS === 'ios' ? 60 : 50,
     minHeight: 90,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     // Glassmorphism Effekt
-    shadowColor: '#DAA520',
+    shadowColor: '#a9c7cd',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -663,16 +663,28 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
   },

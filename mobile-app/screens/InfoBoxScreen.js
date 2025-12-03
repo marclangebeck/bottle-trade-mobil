@@ -35,9 +35,21 @@ import BottomNavigation from '../components/BottomNavigation';
 import { archiveNotification, markNotificationAsCompleted, markNotificationAsRead } from '../services/notificationService';
 import { subscribeNotificationsForUser } from '../services/notificationService';
 import { getCurrentUser } from '../services/testAuth';
-import { getChat, getChatsForUser, getTradeRequest, deleteChat } from '../services/database-web';
+import { getChat, getChatsForUser, getTradeRequest, deleteChat, getUser, createSupportChat } from '../services/database-web';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
+
+// Hilfsfunktion für Initialen
+const getInitials = (user) => {
+  if (user?.firstName && user?.lastName) {
+    return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+  } else if (user?.username) {
+    return user.username.substring(0, 2).toUpperCase();
+  } else if (user?.email) {
+    return user.email.substring(0, 2).toUpperCase();
+  }
+  return 'P';
+};
 
 export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notifications = [], chats = [], currentUserId, isLoggedIn = false, unreadCount = 0, onDeclineTradeRequest = null }) {
   // PHASE 5: Starte mit leerem Array - Subscription lädt alle Notifications (inklusive gelesene)
@@ -46,6 +58,7 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
   const [refreshing, setRefreshing] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [btp, setBtp] = useState(0);
+  const [profileImage, setProfileImage] = useState(null);
   const [hintModalVisible, setHintModalVisible] = useState(false);
   const [selectedHintNotification, setSelectedHintNotification] = useState(null);
   const [hintDecisionModalVisible, setHintDecisionModalVisible] = useState(false);
@@ -78,8 +91,24 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
     const currentUser = getCurrentUser();
     if (currentUser) {
       setBtp(currentUser?.btp ?? 0);
+      loadProfileImage(currentUser.uid);
     }
   }, []);
+
+  const loadProfileImage = async (userId) => {
+    try {
+      if (!userId) return;
+      const userData = await getUser(userId);
+      if (userData && userData.profilbild) {
+        setProfileImage(userData.profilbild);
+      } else {
+        setProfileImage(null);
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Laden des Profilbildes:', error);
+      setProfileImage(null);
+    }
+  };
 
   // Subscribe to notifications
   useEffect(() => {
@@ -414,7 +443,61 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
       .filter(entry => entry !== null); // Entferne null-Entries (werden von Notifications abgedeckt)
 
       // Kombiniere Notifications und Chat-Entries
-      const combined = [...allNotifications, ...chatEntries];
+      // WICHTIG: Entferne Duplikate basierend auf ID, um React Key-Fehler zu vermeiden
+      const allEntries = [...allNotifications, ...chatEntries];
+      const uniqueEntriesMap = new Map();
+      
+      // Füge Einträge hinzu, wobei Duplikate überschrieben werden (neueste gewinnt)
+      // WICHTIG: Verwende eine eindeutige Kombination aus type, id und zusätzlichen Feldern
+      allEntries.forEach((entry) => {
+        if (entry && entry.id) {
+          // Erstelle einen eindeutigen Key basierend auf Typ, ID und zusätzlichen Feldern
+          // Dieser Key sollte identisch zum keyExtractor sein (ohne Index/Timestamp)
+          let uniqueKey = `${entry.type || 'unknown'}-${entry.id}`;
+          
+          // Für Newsletter-Notifications: Füge newsletterId hinzu
+          if (entry.newsletterId) {
+            uniqueKey += `-newsletter-${entry.newsletterId}`;
+          }
+          
+          // Für Chat-Entries: Füge chatId hinzu
+          if (entry.chatId) {
+            uniqueKey += `-chat-${entry.chatId}`;
+          }
+          
+          // Für Survey-Notifications: Füge surveyId hinzu
+          if (entry.surveyId) {
+            uniqueKey += `-survey-${entry.surveyId}`;
+          }
+          
+          // Für System-Messages: Füge systemMessageId hinzu
+          if (entry.systemMessageId) {
+            uniqueKey += `-system-${entry.systemMessageId}`;
+          }
+          
+          // Für Chat-Entries: Füge isChatEntry Marker hinzu
+          if (entry.isChatEntry) {
+            uniqueKey += `-chatEntry`;
+          }
+          
+          const existing = uniqueEntriesMap.get(uniqueKey);
+          if (!existing) {
+            uniqueEntriesMap.set(uniqueKey, entry);
+          } else {
+            // Wenn Duplikat gefunden, behalte den neueren (basierend auf createdAt)
+            const existingDate = existing.createdAt?.toDate ? existing.createdAt.toDate() : new Date(existing.createdAt || 0);
+            const newDate = entry.createdAt?.toDate ? entry.createdAt.toDate() : new Date(entry.createdAt || 0);
+            if (newDate > existingDate) {
+              uniqueEntriesMap.set(uniqueKey, entry);
+              console.warn('⚠️ InfoBoxScreen: Duplikat gefunden und überschrieben:', uniqueKey);
+            } else {
+              console.warn('⚠️ InfoBoxScreen: Duplikat gefunden, behalte bestehenden:', uniqueKey);
+            }
+          }
+        }
+      });
+      
+      const combined = Array.from(uniqueEntriesMap.values());
 
     // Sortiere nach createdAt (neueste zuerst)
     combined.sort((a, b) => {
@@ -505,7 +588,7 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
   };
 
   // Get color for notification type
-  const getNotificationColor = (type) => {
+  const getNotificationColor = (type, priority = null) => {
     switch (type) {
       case 'hint-decision':
         return '#F44336'; // Rot
@@ -513,8 +596,15 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
         return '#FFC107'; // Gelb
       case 'chat':
         return '#4CAF50'; // Grün
-      case 'system':
+      case 'survey':
+        return '#FF9800'; // Orange
+      case 'newsletter':
         return '#2196F3'; // Blau
+      case 'system':
+        // System-Ankündigungen: Farbe basierend auf Priorität
+        if (priority === 'urgent') return '#F44336'; // Rot
+        if (priority === 'high') return '#FFC107'; // Gelb
+        return '#2196F3'; // Blau (normal/low)
       default:
         return '#757575'; // Grau
     }
@@ -529,10 +619,34 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
         return '💡';
       case 'chat':
         return '💬';
+      case 'survey':
+        return '📊';
+      case 'newsletter':
+        return '📧';
       case 'system':
         return '📢';
       default:
         return '📄';
+    }
+  };
+
+  // Get readable label for notification type
+  const getNotificationTypeLabel = (type) => {
+    switch (type) {
+      case 'chat':
+      case 'message':
+        return 'Chat';
+      case 'system':
+        return 'Systemnachricht';
+      case 'newsletter':
+        return 'Newsletter';
+      case 'survey':
+        return 'Umfrage';
+      case 'hint-decision':
+      case 'hint-small':
+        return 'Hinweis';
+      default:
+        return 'Nachricht';
     }
   };
 
@@ -674,9 +788,51 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
         console.log('ℹ️ InfoBoxScreen: hint-decision Notification angeklickt - öffne Modal für Entscheidung');
         setSelectedHintDecisionNotification(notification);
         setHintDecisionModalVisible(true);
+      } else if (notification.type === 'survey') {
+        // Umfrage - navigiere zu SurveyAnswerScreen
+        const userId = currentUserId || getCurrentUser()?.uid;
+        if (userId && notification.id) {
+          try {
+            await markNotificationAsRead(userId, notification.id);
+            console.log('✅ InfoBoxScreen: Survey-Notification als gelesen markiert:', notification.id);
+          } catch (error) {
+            console.error('⚠️ InfoBoxScreen: Fehler beim Markieren als gelesen (fortsetzen trotzdem):', error);
+          }
+        }
+        if (onNavigate && notification.surveyId) {
+          onNavigate('survey-answer', { surveyId: notification.surveyId });
+        }
+      } else if (notification.type === 'newsletter') {
+        // Newsletter - navigiere zu NewsletterReaderScreen
+        const userId = currentUserId || getCurrentUser()?.uid;
+        if (userId && notification.id) {
+          try {
+            await markNotificationAsRead(userId, notification.id);
+            console.log('✅ InfoBoxScreen: Newsletter-Notification als gelesen markiert:', notification.id);
+          } catch (error) {
+            console.error('⚠️ InfoBoxScreen: Fehler beim Markieren als gelesen (fortsetzen trotzdem):', error);
+          }
+        }
+        if (onNavigate && notification.newsletterId) {
+          onNavigate('newsletter-reader', { newsletterId: notification.newsletterId });
+        }
       } else if (notification.type === 'system') {
-        // System-Nachricht - optional: spezielle Behandlung
-        Alert.alert(notification.title || 'System-Nachricht', notification.message);
+        // System-Ankündigung - navigiere zu SystemMessageReaderScreen
+        const userId = currentUserId || getCurrentUser()?.uid;
+        if (userId && notification.id) {
+          try {
+            await markNotificationAsRead(userId, notification.id);
+            console.log('✅ InfoBoxScreen: System-Notification als gelesen markiert:', notification.id);
+          } catch (error) {
+            console.error('⚠️ InfoBoxScreen: Fehler beim Markieren als gelesen (fortsetzen trotzdem):', error);
+          }
+        }
+        if (onNavigate && notification.systemMessageId) {
+          onNavigate('system-message-reader', { messageId: notification.systemMessageId });
+        } else {
+          // Fallback: Zeige Alert (für alte System-Notifications ohne systemMessageId)
+          Alert.alert(notification.title || 'System-Nachricht', notification.message);
+        }
       }
     } catch (error) {
       console.error('❌ InfoBoxScreen: Fehler beim Öffnen der Notification:', {
@@ -1042,7 +1198,7 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
 
   // Render notification item
   const renderNotificationItem = ({ item: notification }) => {
-    const color = getNotificationColor(notification.type);
+    const color = getNotificationColor(notification.type, notification.priority);
     const icon = getNotificationIcon(notification.type);
     const isCompleted = notification.isCompleted;
     const isRead = notification.isRead;
@@ -1183,7 +1339,10 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
               >
                 {notification.title || 'Kein Titel'}
               </Text>
-              <Text style={styles.time}>{formatTime(notification.createdAt)}</Text>
+              <View style={styles.timeContainer}>
+                <Text style={styles.time}>{formatTime(notification.createdAt)}</Text>
+                <Text style={styles.typeLabel}>{getNotificationTypeLabel(notification.type)}</Text>
+              </View>
             </View>
             <Text
               style={[
@@ -1211,6 +1370,50 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
     // Refresh wird durch Subscription automatisch ausgelöst
     setTimeout(() => setRefreshing(false), 1000);
   }, []);
+
+  // Handle Support-Button
+  const handleSupportPress = async () => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !currentUser.uid) {
+        Alert.alert('Fehler', 'Du musst eingeloggt sein, um Support zu kontaktieren.');
+        return;
+      }
+
+      Alert.alert(
+        'Support kontaktieren',
+        'Möchtest du einen Support-Chat mit dem Admin starten?',
+        [
+          { text: 'Abbrechen', style: 'cancel' },
+          {
+            text: 'Ja',
+            onPress: async () => {
+              try {
+                // Support-Chat erstellen
+                const chatId = await createSupportChat(currentUser.uid);
+                
+                // Chat-Daten laden
+                const chat = await getChat(chatId);
+                
+                if (chat && onNavigate) {
+                  // Zum ChatRoomScreen navigieren
+                  onNavigate('chat-room', { chat });
+                } else {
+                  Alert.alert('Fehler', 'Chat konnte nicht geöffnet werden.');
+                }
+              } catch (error) {
+                console.error('❌ Fehler beim Erstellen des Support-Chats:', error);
+                Alert.alert('Fehler', error.message || 'Support-Chat konnte nicht erstellt werden.');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('❌ Fehler beim Support-Button:', error);
+      Alert.alert('Fehler', 'Ein Fehler ist aufgetreten.');
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -1247,12 +1450,6 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
                   <View style={styles.hamburgerLine} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.wishlistButton}
-                onPress={() => onNavigate('wunschliste')}
-              >
-                <Text style={styles.wishlistHeart}>♡</Text>
-              </TouchableOpacity>
             </View>
             
             {/* Bottle (Logo) Trade in der Mitte */}
@@ -1274,14 +1471,26 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
                 style={styles.profileIconContainer}
                 onPress={() => onNavigate('profil')}
               >
-                <View style={styles.profileIconCircle}>
-                  <Text style={styles.profileIconText}>P</Text>
-                </View>
+                {profileImage ? (
+                  <OptimizedImage
+                    source={{ uri: profileImage }}
+                    style={styles.profileIconImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.profileIconCircle}>
+                    <Text style={styles.profileIconText}>
+                      {getInitials(getCurrentUser())}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
-              <View style={styles.profileBtpBadge}>
-                <Text style={styles.profileBtpText}>{`${btp ?? 0} BTP`}</Text>
-              </View>
             </View>
+          </View>
+          
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
           
           {/* Header mit Überschrift */}
@@ -1295,7 +1504,54 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
           <FlatList
             data={combinedEntries}
             renderItem={renderNotificationItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item, index) => {
+              // WICHTIG: Stelle sicher, dass Keys eindeutig und stabil sind
+              // Verwende eine Kombination aus Typ, ID und zusätzlichen Feldern
+              // Index nur als letzten Fallback
+              if (!item || !item.id) {
+                console.warn('⚠️ InfoBoxScreen: Eintrag ohne ID gefunden, verwende Index:', index);
+                return `entry-${index}-${Date.now()}-${Math.random()}`;
+              }
+              
+              const type = item.type || 'unknown';
+              let uniqueKey = `${type}-${item.id}`;
+              
+              // Für Newsletter-Notifications: Füge newsletterId hinzu
+              if (item.newsletterId) {
+                uniqueKey += `-newsletter-${item.newsletterId}`;
+              }
+              
+              // Für Chat-Entries: Füge chatId hinzu
+              if (item.chatId) {
+                uniqueKey += `-chat-${item.chatId}`;
+              }
+              
+              // Für Survey-Notifications: Füge surveyId hinzu
+              if (item.surveyId) {
+                uniqueKey += `-survey-${item.surveyId}`;
+              }
+              
+              // Für System-Messages: Füge systemMessageId hinzu
+              if (item.systemMessageId) {
+                uniqueKey += `-system-${item.systemMessageId}`;
+              }
+              
+              // Für Chat-Entries: Füge isChatEntry Marker hinzu
+              if (item.isChatEntry) {
+                uniqueKey += `-chatEntry`;
+              }
+              
+              // Falls immer noch nicht eindeutig (sollte nicht passieren), füge createdAt hinzu
+              if (item.createdAt) {
+                const timestamp = item.createdAt?.toDate ? item.createdAt.toDate().getTime() : new Date(item.createdAt).getTime();
+                uniqueKey += `-ts-${timestamp}`;
+              } else {
+                // Als letzten Fallback: Index (sollte nur bei echten Duplikaten passieren)
+                uniqueKey += `-idx-${index}`;
+              }
+              
+              return uniqueKey;
+            }}
             contentContainerStyle={styles.listContent}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -1313,6 +1569,17 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
         <Footer />
       </View>
       
+      {/* Support FAB Button */}
+      {isLoggedIn && (
+        <TouchableOpacity
+          style={styles.supportFab}
+          onPress={handleSupportPress}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.supportFabText}>💬</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Fixed Bottom Navigation */}
       <BottomNavigation
         onNavigate={onNavigate}
@@ -1418,13 +1685,13 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1441,12 +1708,24 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
     marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -1458,6 +1737,7 @@ const styles = StyleSheet.create({
   wishlistButton: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   wishlistHeart: {
     fontSize: 24,
@@ -1486,31 +1766,55 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileIconContainer: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  profileIconImage: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+  },
   profileIconText: {
     fontSize: 25,
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
   profileBtpBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    backgroundColor: '#DAA520',
+    backgroundColor: '#a9c7cd',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)',
@@ -1533,7 +1837,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginTop: 0,
     minHeight: 60,
-    borderTopWidth: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
@@ -1542,15 +1847,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 30,
-    fontWeight: '600',
-    color: '#DAA520', // Warmes Gold
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 0.5,
-    // Eleganter Gradient-Effekt durch Text-Shadow
-    textShadowColor: 'rgba(218, 165, 32, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   listContent: {
@@ -1611,9 +1912,17 @@ const styles = StyleSheet.create({
   titleUnread: {
     fontWeight: 'bold',
   },
+  timeContainer: {
+    alignItems: 'flex-end',
+  },
   time: {
     fontSize: 12,
     color: '#CCCCCC',
+  },
+  typeLabel: {
+    fontSize: 12,
+    color: '#CCCCCC',
+    marginTop: 2,
   },
   message: {
     fontSize: 14,
@@ -1695,7 +2004,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#DAA520',
+    color: '#a9c7cd',
     textAlign: 'center',
     textShadowColor: 'rgba(218, 165, 32, 0.6)',
     textShadowOffset: { width: 0, height: 2 },
@@ -1715,13 +2024,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalOKButton: {
-    backgroundColor: '#DAA520',
+    backgroundColor: '#a9c7cd',
     paddingHorizontal: 40,
     paddingVertical: 12,
     borderRadius: 25,
     minWidth: 120,
     alignItems: 'center',
-    shadowColor: '#DAA520',
+    shadowColor: '#a9c7cd',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 4,
@@ -1731,6 +2040,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#2c2c2c',
+  },
+  // Support FAB Styles
+  supportFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 100, // Über der BottomNavigation (75px Höhe + 25px Abstand)
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#DAA520', // Gold
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  supportFabText: {
+    fontSize: 28,
   },
   // Hint-Decision Modal Styles
   modalButton: {
@@ -1747,8 +2077,8 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   modalViewButton: {
-    backgroundColor: '#DAA520',
-    shadowColor: '#DAA520',
+    backgroundColor: '#a9c7cd',
+    shadowColor: '#a9c7cd',
   },
   modalDeclineButton: {
     backgroundColor: '#DC3545',

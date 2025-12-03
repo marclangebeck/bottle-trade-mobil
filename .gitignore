@@ -33,3 +33,17 @@ logs/
 # Database
 *.db
 *.sqlite3
+
+# Backups
+Backup_*.tar.gz
+backup_*.tar.gz
+*.tar.gz
+
+# Temporary files
+tmp_*.txt
+restore_tmp/
+mobile-app_reset_before_restore/
+
+# Large data files
+DE.txt
+cloudflared-*.deb

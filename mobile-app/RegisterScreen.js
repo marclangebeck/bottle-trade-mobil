@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, Plat
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { registerUser } from './services/testAuth';
+import { uploadImageToStorage } from './services/database-web';
 import OptimizedImage from './components/OptimizedImage';
 
 export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) {
@@ -19,9 +20,13 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
     zipCode: '',
     city: '',
     publishProfile: false,
-    newsletter: false
+    newsletter: false,
+    isWinery: false,
+    ageConfirmed: false, // Altersverifizierung (18+)
+    termsAccepted: false // AGB/Datenschutz akzeptiert
   });
   const [profileImage, setProfileImage] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   // Refs für TextInput-Felder
   const usernameRef = useRef(null);
@@ -82,7 +87,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
       }
     }
     
-    if (currentStep < 5) {
+    if (currentStep < 6) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -96,7 +101,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
   };
 
   const handleRegister = async () => {
-    const { username, email, password, confirmPassword, firstName, lastName, street, houseNumber, zipCode, city, publishProfile, newsletter } = formData;
+    const { username, email, password, confirmPassword, firstName, lastName, street, houseNumber, zipCode, city, publishProfile, newsletter, ageConfirmed, termsAccepted } = formData;
     
     if (!username || !email || !password || !confirmPassword || !firstName || !lastName || !street || !houseNumber || !zipCode || !city) {
       Alert.alert('Fehler', 'Bitte füllen Sie alle Pflichtfelder aus');
@@ -112,15 +117,21 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
       Alert.alert('Fehler', 'Bitte geben Sie ein Passwort ein');
       return;
     }
-    
-    // BTP-Berechnung
-    let btpEarned = 0;
-    if (publishProfile) btpEarned += 10;
-    if (newsletter) btpEarned += 10;
 
+    // Altersverifizierung prüfen
+    if (!ageConfirmed) {
+      Alert.alert('Altersbeschränkung', 'Sie müssen bestätigen, dass Sie mindestens 18 Jahre alt sind, um diese App zu nutzen.');
+      return;
+    }
+
+    // AGB/Datenschutz prüfen
+    if (!termsAccepted) {
+      Alert.alert('Einwilligung erforderlich', 'Bitte akzeptieren Sie die AGB und die Datenschutzerklärung, um fortzufahren.');
+      return;
+    }
+    
     const registrationData = {
       ...formData,
-      btpEarned,
       status: 'pending',
       registrationDate: new Date().toISOString(),
       address: {
@@ -134,6 +145,22 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
     try {
       console.log('🔄 Attempting registration for:', email);
       
+      // Profilbild hochladen, falls vorhanden
+      let profilbildUrl = null;
+      if (profileImage) {
+        try {
+          console.log('📤 Uploading profile image...');
+          setIsUploading(true);
+          profilbildUrl = await uploadImageToStorage(profileImage, 'profiles');
+          console.log('✅ Profile image uploaded:', profilbildUrl);
+        } catch (uploadError) {
+          console.error('❌ Error uploading profile image:', uploadError);
+          Alert.alert('Warnung', 'Profilbild konnte nicht hochgeladen werden. Registrierung wird ohne Profilbild fortgesetzt.');
+        } finally {
+          setIsUploading(false);
+        }
+      }
+      
       const userData = {
         username,
         firstName,
@@ -142,24 +169,28 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
         zipCode,
         city,
         publishProfile,
-        newsletter
+        newsletter,
+        isWinery: formData.isWinery || false,
+        isWineryVerified: false, // Wird vom Admin verifiziert
+        profilbild: profilbildUrl // Profilbild-URL hinzufügen
       };
       
       const user = await registerUser(email, password, userData);
       console.log('✅ Registration successful:', user.email);
       
-      Alert.alert('Erfolg', `Registrierung erfolgreich! Du erhältst ${btpEarned} BTP. Bitte bestätigen Sie Ihre E-Mail.`, [
+      Alert.alert('Erfolg', 'Registrierung erfolgreich! Bitte bestätigen Sie Ihre E-Mail.', [
         { text: 'OK', onPress: () => onRegister(registrationData) }
       ]);
     } catch (error) {
       console.error('❌ Registration failed:', error);
       Alert.alert('Fehler', 'Registrierung fehlgeschlagen: ' + error.message);
+      setIsUploading(false);
     }
   };
 
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Maske 1/4</Text>
+      <Text style={styles.stepTitle}>Maske 1/6</Text>
       <Text style={styles.stepSubtitle}>Benutzername und Foto</Text>
       
       <TextInput
@@ -188,7 +219,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
 
   const renderStep2 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Maske 2/4</Text>
+      <Text style={styles.stepTitle}>Maske 2/6</Text>
       <Text style={styles.stepSubtitle}>Persönliche Daten</Text>
       
       <View style={styles.row}>
@@ -278,7 +309,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
 
   const renderStep3 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Maske 3/4</Text>
+      <Text style={styles.stepTitle}>Maske 3/6</Text>
       <Text style={styles.stepSubtitle}>Passwort</Text>
       
       <TextInput
@@ -308,27 +339,18 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
   );
 
   const renderStep4 = () => {
-    let btpEarned = 0;
-    if (formData.publishProfile) btpEarned += 10;
-    if (formData.newsletter) btpEarned += 10;
-
     return (
       <View style={styles.stepContainer}>
-        <Text style={styles.stepTitle}>Maske 4/4</Text>
-        <Text style={styles.stepSubtitle}>Willkommens-BTP</Text>
+        <Text style={styles.stepTitle}>Maske 4/6</Text>
+        <Text style={styles.stepSubtitle}>Einstellungen</Text>
         
         <View style={styles.btpContainer}>
-          <Text style={styles.btpTitle}>🎁 Willkommens-BTP</Text>
-          <Text style={styles.btpDescription}>
-            Aktiviere die Optionen unten und erhalte zusätzliche BTP bei der Registrierung!
-          </Text>
-          
           <TouchableOpacity
             style={[styles.checkboxButton, formData.publishProfile && styles.checkboxButtonActive]}
             onPress={() => updateFormData('publishProfile', !formData.publishProfile)}
           >
             <Text style={styles.checkboxText}>
-              {formData.publishProfile ? '✓' : '○'} Profil veröffentlichen (+10 BTP)
+              {formData.publishProfile ? '✓' : '○'} Profil veröffentlichen
             </Text>
           </TouchableOpacity>
           
@@ -337,27 +359,80 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
             onPress={() => updateFormData('newsletter', !formData.newsletter)}
           >
             <Text style={styles.checkboxText}>
-              {formData.newsletter ? '✓' : '○'} Newsletter abonnieren (+10 BTP)
+              {formData.newsletter ? '✓' : '○'} Newsletter abonnieren
             </Text>
           </TouchableOpacity>
           
-          <View style={styles.btpTotal}>
-            <Text style={styles.btpTotalText}>Gesamt: {btpEarned} BTP</Text>
-          </View>
+          <TouchableOpacity
+            style={[styles.checkboxButton, formData.isWinery && styles.checkboxButtonActive]}
+            onPress={() => updateFormData('isWinery', !formData.isWinery)}
+          >
+            <Text style={styles.checkboxText}>
+              {formData.isWinery ? '✓' : '○'} 🏰 Ich bin ein Weingut
+            </Text>
+          </TouchableOpacity>
+          {formData.isWinery && (
+            <Text style={styles.wineryHint}>
+              ℹ️ Dein Weingut-Profil muss von einem Admin verifiziert werden, bevor es öffentlich sichtbar ist.
+            </Text>
+          )}
         </View>
       </View>
     );
   };
 
   const renderStep5 = () => {
-    let btpEarned = 0;
-    if (formData.publishProfile) btpEarned += 10;
-    if (formData.newsletter) btpEarned += 10;
-
     return (
       <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
-        <Text style={styles.stepTitle}>Übersicht</Text>
-        <Text style={styles.stepSubtitle}>Bitte überprüfen Sie Ihre Daten</Text>
+        <Text style={styles.stepTitle}>Maske 5/6</Text>
+        <Text style={styles.stepSubtitle}>Rechtliche Bestätigungen</Text>
+        
+        <View style={styles.legalContainer}>
+          <Text style={styles.legalTitle}>⚠️ Wichtige Hinweise</Text>
+          
+          <Text style={styles.legalText}>
+            Diese App dient dem Tausch von Weinflaschen zwischen Privatpersonen. Alkoholhaltige Getränke dürfen nur an Personen ab 18 Jahren weitergegeben werden.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.checkboxButton, formData.ageConfirmed && styles.checkboxButtonActive]}
+            onPress={() => updateFormData('ageConfirmed', !formData.ageConfirmed)}
+          >
+            <Text style={styles.checkboxText}>
+              {formData.ageConfirmed ? '✓' : '○'} Ich bestätige, dass ich mindestens 18 Jahre alt bin und berechtigt bin, alkoholhaltige Getränke zu erwerben und zu besitzen.
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.checkboxButton, formData.termsAccepted && styles.checkboxButtonActive]}
+            onPress={() => updateFormData('termsAccepted', !formData.termsAccepted)}
+          >
+            <Text style={styles.checkboxText}>
+              {formData.termsAccepted ? '✓' : '○'} Ich habe die{' '}
+              <Text style={styles.linkText} onPress={() => onNavigate && onNavigate('impressum')}>
+                AGB
+              </Text>
+              {' '}und die{' '}
+              <Text style={styles.linkText} onPress={() => onNavigate && onNavigate('datenschutz')}>
+                Datenschutzerklärung
+              </Text>
+              {' '}gelesen und akzeptiere diese.
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.legalHint}>
+            ℹ️ Bottle-Trade ist eine reine Vermittlungsplattform. Die Verantwortung für die Tauschgeschäfte liegt bei den Tauschpartnern.
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  };
+
+  const renderStep6 = () => {
+    return (
+      <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
+        <Text style={styles.stepTitle}>Maske 6/6</Text>
+        <Text style={styles.stepSubtitle}>Übersicht</Text>
         
         <View style={styles.summaryContainer}>
           <View style={styles.summaryRow}>
@@ -400,13 +475,13 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
           </View>
           
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Newsletter:</Text>
-            <Text style={styles.summaryValue}>{formData.newsletter ? 'Ja' : 'Nein'}</Text>
+            <Text style={styles.summaryLabel}>Ich bin ein Weingut:</Text>
+            <Text style={styles.summaryValue}>{formData.isWinery ? 'Ja' : 'Nein'}</Text>
           </View>
           
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Willkommens-BTP:</Text>
-            <Text style={styles.summaryValue}>{btpEarned} BTP</Text>
+            <Text style={styles.summaryLabel}>Newsletter:</Text>
+            <Text style={styles.summaryValue}>{formData.newsletter ? 'Ja' : 'Nein'}</Text>
           </View>
         </View>
       </ScrollView>
@@ -464,6 +539,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
         {currentStep === 3 && renderStep3()}
         {currentStep === 4 && renderStep4()}
         {currentStep === 5 && renderStep5()}
+        {currentStep === 6 && renderStep6()}
         
         {/* Navigation Buttons */}
         <View style={styles.navigationButtons}>
@@ -483,7 +559,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
             </TouchableOpacity>
           )}
           
-          {currentStep < 5 ? (
+          {currentStep < 6 ? (
             <TouchableOpacity
               style={[styles.navButton, styles.navButtonNext]}
               onPress={handleNext}
@@ -499,8 +575,9 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.navButton, styles.navButtonRegister]}
+              style={[styles.navButton, styles.navButtonRegister, isUploading && styles.navButtonDisabled]}
               onPress={handleRegister}
+              disabled={isUploading}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -678,19 +755,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  btpTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  btpDescription: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 14,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
   checkboxButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     padding: 16,
@@ -708,17 +772,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  btpTotal: {
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-  },
-  btpTotalText: {
-    color: '#FFD700',
-    fontSize: 20,
-    fontWeight: '700',
+  wineryHint: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 8,
+    marginLeft: 8,
+    fontStyle: 'italic',
   },
   summaryContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -781,6 +840,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(76, 175, 80, 0.25)',
     borderColor: 'rgba(76, 175, 80, 0.5)',
   },
+  navButtonDisabled: {
+    opacity: 0.5,
+  },
   buttonGradient: {
     position: 'absolute',
     top: 0,
@@ -798,5 +860,39 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
     zIndex: 1,
+  },
+  legalContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginTop: 20,
+  },
+  legalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  legalText: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 22,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  legalHint: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: 15,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  linkText: {
+    color: '#4A9EFF',
+    textDecorationLine: 'underline',
+    fontWeight: '600',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -13,20 +13,41 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import OptimizedImage from '../components/OptimizedImage';
 
-export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [], onCreateSurvey, onDeleteSurvey, onEndSurvey, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [], onCreateSurvey, onDeleteSurvey, onEndSurvey, onGetSurveyAnswers = null, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
   const [surveyData, setSurveyData] = useState({
     title: '',
     question: '',
     options: ['', ''],
-    btpReward: 5,
     targetGroup: 'all' // all, active, premium
   });
+  const [surveyResponseCounts, setSurveyResponseCounts] = useState({}); // { surveyId: count }
 
   // Verwende die übergebenen Surveys
   const existingSurveys = surveys;
+
+  // Lade Antworten-Anzahl für alle Surveys
+  useEffect(() => {
+    if (surveys.length > 0 && onGetSurveyAnswers) {
+      const loadResponseCounts = async () => {
+        const counts = {};
+        for (const survey of surveys) {
+          try {
+            const answers = await onGetSurveyAnswers(survey.id);
+            counts[survey.id] = answers.length;
+          } catch (error) {
+            console.error(`❌ Fehler beim Laden der Antworten für Survey ${survey.id}:`, error);
+            counts[survey.id] = 0;
+          }
+        }
+        setSurveyResponseCounts(counts);
+      };
+      loadResponseCounts();
+    }
+  }, [surveys, onGetSurveyAnswers]);
 
   const handleCreateSurvey = () => {
     console.log('🔄 Erstelle neue Umfrage...', surveyData);
@@ -59,7 +80,6 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
       title: '',
       question: '',
       options: ['', ''],
-      btpReward: 5,
       targetGroup: 'all'
     });
   };
@@ -93,13 +113,18 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
       `Möchten Sie die Umfrage "${survey.title}" wirklich löschen?\n\nDies kann nicht rückgängig gemacht werden!`,
       [
         { text: 'Abbrechen', style: 'cancel' },
-        { text: 'Löschen', style: 'destructive', onPress: () => {
-          if (onDeleteSurvey) {
-            onDeleteSurvey(survey.id);
-            Alert.alert('Erfolg', 'Umfrage wurde gelöscht!');
-          } else {
-            Alert.alert('Erfolg', 'Umfrage wurde gelöscht!');
-            console.log('Umfrage gelöscht:', survey.id);
+        { text: 'Löschen', style: 'destructive', onPress: async () => {
+          try {
+            if (onDeleteSurvey) {
+              await onDeleteSurvey(survey.id);
+              Alert.alert('Erfolg', 'Umfrage wurde gelöscht!');
+            } else {
+              Alert.alert('Fehler', 'Lösch-Funktion nicht verfügbar.');
+              console.log('onDeleteSurvey nicht verfügbar');
+            }
+          } catch (error) {
+            console.error('❌ Fehler beim Löschen:', error);
+            Alert.alert('Fehler', 'Umfrage konnte nicht gelöscht werden: ' + (error.message || 'Unbekannter Fehler'));
           }
         }}
       ]
@@ -150,21 +175,13 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
-      
       {/* StatusBar-Ersatz für iPhone */}
       <View style={{
         height: Platform.OS === 'ios' ? 60 : 0,
         backgroundColor: '#2c2c2c',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        borderBottomWidth: 0.5,
-        borderBottomColor: 'rgba(255, 255, 255, 0.2)'
+        width: '100%',
       }} />
-      
+      <StatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
       <View style={styles.container}>
         <DynamicHamburgerMenu 
           onNavigate={onNavigate} 
@@ -178,32 +195,61 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
         />
         
         <View style={styles.contentContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.hamburgerContainer}>
-              <TouchableOpacity 
-                style={styles.hamburgerButton}
-                onPress={() => setIsMenuVisible(!isMenuVisible)}
-              >
-                <View style={styles.hamburgerLine} />
-                <View style={styles.hamburgerLine} />
-                <View style={styles.hamburgerLine} />
-              </TouchableOpacity>
+          {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+          <View style={styles.logoHeaderContainer}>
+            {/* Hamburger-Menü links */}
+            <View style={styles.headerLeft}>
+              <View style={styles.hamburgerContainer}>
+                <TouchableOpacity 
+                  style={styles.hamburgerButton}
+                  onPress={() => setIsMenuVisible(!isMenuVisible)}
+                >
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.headerCenter}>
-              <Text style={styles.greeting}>Umfragen</Text>
+            
+            {/* Bottle (Logo) Trade in der Mitte */}
+            <View style={styles.logoHeaderCenter}>
+              <Text style={styles.logoHeaderText}>Bottle</Text>
+              <View style={styles.logoImageWrapper}>
+                <OptimizedImage
+                  source={require('../assets/images/Logo_white.png')}
+                  style={styles.logoHeaderImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.logoHeaderText}>Trade</Text>
             </View>
-            <View style={styles.headerRight}>
+            
+            {/* Profil-Icon rechts */}
+            <View style={styles.profileSection}>
               <TouchableOpacity 
-                style={styles.createButton} 
-                onPress={() => setIsCreatingSurvey(!isCreatingSurvey)}
+                style={styles.profileIconContainer}
+                onPress={() => onNavigate('profil')}
               >
-                <Text style={styles.createButtonText}>+</Text>
+                <View style={styles.profileIconCircle}>
+                  <Text style={styles.profileIconText}>A</Text>
+                </View>
               </TouchableOpacity>
             </View>
           </View>
           
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+          </View>
+          
+          {/* Header mit Überschrift */}
+          <View style={styles.header}>
+            <View style={styles.headerCenter}>
+              <Text style={styles.greeting}>Umfragen</Text>
+            </View>
+          </View>
+          
+<ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.dashboardContainer}>
               <TouchableOpacity 
                 style={styles.backButton}
@@ -211,6 +257,15 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
               >
                 <Text style={styles.backButtonText}>← Zurück zum Admin-Bereich</Text>
               </TouchableOpacity>
+              
+              {!isCreatingSurvey && (
+                <TouchableOpacity 
+                  style={styles.createButton} 
+                  onPress={() => setIsCreatingSurvey(!isCreatingSurvey)}
+                >
+                  <Text style={styles.createButtonText}>+ Neue Umfrage erstellen</Text>
+                </TouchableOpacity>
+              )}
               
               {isCreatingSurvey ? (
                 <View style={styles.createForm}>
@@ -269,18 +324,6 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
                   </View>
 
                   <View style={styles.inputGroup}>
-                    <Text style={styles.label}>BTP-Belohnung</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={surveyData.btpReward.toString()}
-                      onChangeText={(text) => setSurveyData({...surveyData, btpReward: parseInt(text) || 0})}
-                      placeholder="5"
-                      placeholderTextColor="#999999"
-                      keyboardType="numeric"
-                    />
-                  </View>
-
-                  <View style={styles.inputGroup}>
                     <Text style={styles.label}>Zielgruppe</Text>
                     <View style={styles.radioGroup}>
                       <TouchableOpacity 
@@ -332,9 +375,22 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
                       </View>
                       <Text style={styles.surveyQuestion}>{survey.question}</Text>
                       <View style={styles.surveyStats}>
-                        <Text style={styles.statText}>{survey.responses} Antworten</Text>
-                        <Text style={styles.statText}>{survey.btpReward} BTP Belohnung</Text>
-                        <Text style={styles.statText}>{survey.createdAt}</Text>
+                        <Text style={styles.statText}>
+                          {surveyResponseCounts[survey.id] !== undefined 
+                            ? `${surveyResponseCounts[survey.id]} Antworten` 
+                            : survey.responses !== undefined 
+                              ? `${survey.responses} Antworten` 
+                              : 'Lade...'}
+                        </Text>
+                        <Text style={styles.statText}>
+                          {survey.createdAt 
+                            ? (survey.createdAt.toDate 
+                              ? survey.createdAt.toDate().toLocaleDateString('de-DE') 
+                              : survey.createdAt.seconds 
+                                ? new Date(survey.createdAt.seconds * 1000).toLocaleDateString('de-DE')
+                                : new Date(survey.createdAt).toLocaleDateString('de-DE'))
+                            : 'Unbekannt'}
+                        </Text>
                       </View>
                       
                       {/* Aktions-Buttons */}
@@ -387,61 +443,161 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
   },
-  header: {
+  logoHeaderContainer: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    width: '100%',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
-    position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 90,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
-    // Glassmorphism Effekt
-    shadowColor: '#DAA520',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
+  headerLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+  },
+  logoHeaderCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  logoHeaderText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileSection: {
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileIconContainer: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  profileIconCircle: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 25,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
+
   hamburgerContainer: {
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#2c2c2c',
+    position: 'relative',
+    marginTop: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   headerCenter: {
     flex: 1,
     alignItems: 'center',
   },
-  headerRight: {
-    flex: 0,
-    width: 80,
-    alignItems: 'center',
-  },
   greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c2c2c', // Dunkler Text auf hellem Header
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
+    letterSpacing: 1,
+    includeFontPadding: false,
   },
   backButton: {
+    padding: 10,
+    marginBottom: 10,
+  },
+  backButtonText: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  createButton: {
     backgroundColor: '#D2691E',
     borderRadius: 12,
     padding: 15,
@@ -453,22 +609,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  backButtonText: {
+  createButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
-  },
-  createButton: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    backgroundColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  createButtonText: {
-    fontSize: 24,
-    color: '#FFFFFF',
     fontWeight: 'bold',
   },
   content: {
@@ -631,7 +774,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2f3a3b',
+    color: '#FFFFFF',
     marginBottom: 20,
     borderBottomWidth: 2,
     borderBottomColor: '#D2691E',

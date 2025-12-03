@@ -12,6 +12,7 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import OptimizedImage from '../components/OptimizedImage';
 import { getCurrentUser } from '../services/testAuth';
 import { collection, getDocs, deleteDoc, doc, writeBatch, updateDoc, query, where, getDoc, orderBy } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
@@ -326,7 +327,9 @@ export default function AdminChatsScreen({ onNavigate, onLogout, chats = [], onD
         />
         
         <View style={styles.contentContainer}>
-          <View style={styles.header}>
+          {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+          <View style={styles.logoHeaderContainer}>
+            {/* Hamburger-Menü links */}
             <View style={styles.hamburgerContainer}>
               <TouchableOpacity 
                 style={styles.hamburgerButton}
@@ -337,13 +340,44 @@ export default function AdminChatsScreen({ onNavigate, onLogout, chats = [], onD
                 <View style={styles.hamburgerLine} />
               </TouchableOpacity>
             </View>
+            
+            {/* Bottle (Logo) Trade in der Mitte */}
+            <View style={styles.logoHeaderCenter}>
+              <Text style={styles.logoHeaderText}>Bottle</Text>
+              <View style={styles.logoImageWrapper}>
+                <OptimizedImage
+                  source={require('../assets/images/Logo_white.png')}
+                  style={styles.logoHeaderImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.logoHeaderText}>Trade</Text>
+            </View>
+            
+            {/* Profil-Icon rechts */}
+            <TouchableOpacity 
+              style={styles.profileIconContainer}
+              onPress={() => onNavigate('profil')}
+            >
+              <View style={styles.profileIconCircle}>
+                <Text style={styles.profileIconText}>P</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+          </View>
+          
+          {/* Header mit Überschrift */}
+          <View style={styles.header}>
             <View style={styles.headerCenter}>
               <Text style={styles.greeting}>Chat-Verwaltung</Text>
             </View>
-            <View style={styles.headerRight} />
           </View>
           
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+<ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.dashboardContainer}>
               <TouchableOpacity 
                 style={styles.backButton}
@@ -446,47 +480,129 @@ export default function AdminChatsScreen({ onNavigate, onLogout, chats = [], onD
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c',
   },
   contentContainer: {
     flex: 1,
+    backgroundColor: '#2c2c2c',
   },
+  logoHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
+    backgroundColor: '#2c2c2c',
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  logoHeaderCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  logoHeaderText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileIconContainer: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
+
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#2c2c2c',
     position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 90,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
-    // Glassmorphism Effekt
-    shadowColor: '#DAA520',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    marginTop: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   hamburgerContainer: {
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -495,10 +611,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c2c2c', // Dunkler Text auf hellem Header
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
+    letterSpacing: 1,
+    includeFontPadding: false,
   },
   headerRight: {
     flex: 0,
@@ -600,7 +718,7 @@ const styles = StyleSheet.create({
   },
   chatIcon: {
     fontSize: 24,
-    marginRight: 12,
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
   },
   chatInfo: {
     flex: 1,

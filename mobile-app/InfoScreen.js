@@ -29,7 +29,7 @@ export default function InfoScreen({ onNavigate, onShowRegister }) {
       title: 'Für wen ist BOTTLE-TRADE gedacht?',
       content: [
         { icon: '🍷', title: 'Weinliebhaber mit vollem Keller', desc: 'Tausche deine überzähligen Weine gegen spannende Neuheiten.', color: '#CD5C5C' },
-        { icon: '🔍', title: 'Genießer mit Entdeckergeist', desc: 'Probiere die neuesten Empfehlungen aus deiner Region.', color: '#DAA520' },
+        { icon: '🔍', title: 'Genießer mit Entdeckergeist', desc: 'Probiere die neuesten Empfehlungen aus deiner Region.', color: '#a9c7cd' },
         { icon: '♻️', title: 'Nachhaltigkeits-Profis', desc: 'Gib ungenutzte Flaschen weiter, statt sie verstauben zu lassen.', color: '#90EE90' }
       ]
     },

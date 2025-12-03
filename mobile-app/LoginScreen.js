@@ -7,6 +7,7 @@ import OptimizedImage from './components/OptimizedImage';
 export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true); // Standardmäßig aktiviert
   const passwordRef = useRef(null);
 
   const handleLogin = async () => {
@@ -16,14 +17,16 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
     }
     
     try {
-      // Echte Firebase Authentication
-      const user = await loginUser(emailOrUsername, password);
+      // Echte Firebase Authentication mit "Remember Me" Option
+      const user = await loginUser(emailOrUsername, password, rememberMe);
       console.log('✅ Login successful:', user.email);
       // Direkt zum Dashboard navigieren ohne Alert
       onLogin();
     } catch (error) {
       console.error('❌ Login failed:', error);
-      Alert.alert('Fehler', 'Login fehlgeschlagen. Bitte überprüfen Sie Ihre Anmeldedaten.');
+      // Zeige spezifische Fehlermeldung, falls vorhanden
+      const errorMessage = error.message || 'Login fehlgeschlagen. Bitte überprüfen Sie Ihre Anmeldedaten.';
+      Alert.alert('Fehler', errorMessage);
     }
   };
 
@@ -96,6 +99,18 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
               returnKeyType="done"
               onSubmitEditing={handleLogin}
             />
+            
+            {/* Remember Me Checkbox */}
+            <TouchableOpacity
+              style={styles.rememberMeContainer}
+              onPress={() => setRememberMe(!rememberMe)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.rememberMeText}>Angemeldet bleiben</Text>
+            </TouchableOpacity>
             
             {/* Anmelden Button mit Glassmorphismus */}
             <TouchableOpacity
@@ -276,5 +291,36 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    marginTop: -10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  checkboxChecked: {
+    backgroundColor: 'rgba(33, 150, 243, 0.5)',
+    borderColor: 'rgba(33, 150, 243, 0.8)',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  rememberMeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    opacity: 0.9,
   },
 });

@@ -8,7 +8,10 @@ import {
   Image,
   Platform,
   Alert,
-  Modal
+  Modal,
+  Dimensions,
+  FlatList,
+  TextInput
 } from 'react-native';
 import { ImageBackground } from 'react-native';
 import OptimizedImage from './components/OptimizedImage';
@@ -17,22 +20,39 @@ import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
 import { getAvailableWines, unpublishWine, publishWine } from './data/mockData';
 import { getCurrentUser } from './services/testAuth';
-import { getAllWinesByOwner } from './services/database-web';
+import { getAllWinesByOwner, getUser, updateWine } from './services/database-web';
+import { getDistanceText } from './services/geocodingService';
 
-export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, chats = [], isLoggedIn = false, onCreateTradeRequest = null }) {
+// Hilfsfunktion für Initialen
+const getInitials = (user) => {
+  if (user?.firstName && user?.lastName) {
+    return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+  } else if (user?.username) {
+    return user.username.substring(0, 2).toUpperCase();
+  } else if (user?.email) {
+    return user.email.substring(0, 2).toUpperCase();
+  }
+  return 'P';
+};
+
+export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, chats = [], isLoggedIn = false, onCreateTradeRequest = null, wishlistMatchCount = 0 }) {
   const [wines, setWines] = useState([]);
   const [allWines, setAllWines] = useState([]); // Alle Weine inkl. private für Status-Prüfung
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedWine, setSelectedWine] = useState(null); // Für Modal
   const [isModalVisible, setIsModalVisible] = useState(false); // Modal sichtbar
+  const [currentImageIndex, setCurrentImageIndex] = useState(0); // Für Swipe-Galerie
   const [currentUserId, setCurrentUserId] = useState('');
   const [publishModalVisible, setPublishModalVisible] = useState(false);
   const [selectedWineForPublish, setSelectedWineForPublish] = useState(null);
   const [publishCount, setPublishCount] = useState(1);
   const [publishMode, setPublishMode] = useState('publish'); // 'publish' oder 'unpublish'
-  const [btp, setBtp] = useState(0);
+  const [profileImage, setProfileImage] = useState(null);
   const scrollViewRef = useRef(null);
+  const [viewMode, setViewMode] = useState('container'); // 'container' oder 'list'
+  const [searchText, setSearchText] = useState(''); // Suchtext für Filterung
+  const [showMyWines, setShowMyWines] = useState(true); // Eigene Weine anzeigen/ausblenden
   
   // Admin-Status wird von App.js übergeben
   console.log('🔍 WeinboerseScreen: Admin-Status:', isAdmin ? 'Admin' : 'Standard-User');
@@ -45,8 +65,64 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
     if (currentUserId) {
       loadWines();
       loadAllWines();
+      loadProfileImage();
     }
   }, [currentUserId]);
+
+  const loadProfileImage = async () => {
+    try {
+      if (!currentUserId) return;
+      const userData = await getUser(currentUserId);
+      if (userData && userData.profilbild) {
+        setProfileImage(userData.profilbild);
+      } else {
+        setProfileImage(null);
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Laden des Profilbildes:', error);
+      setProfileImage(null);
+    }
+  };
+
+  // Filter-Funktion für Weine
+  const filterWines = (winesList, searchQuery, showOwnWines = true) => {
+    let filtered = winesList;
+    
+    // Filtere eigene Weine heraus, wenn showOwnWines false ist
+    if (!showOwnWines) {
+      const currentUser = getCurrentUser && getCurrentUser();
+      filtered = filtered.filter(wine => {
+        const isMine = currentUser && (
+          (wine.ownerId && wine.ownerId === currentUser.uid) ||
+          (wine.owner && (wine.owner === currentUser.username || wine.owner === currentUser.email))
+        );
+        return !isMine;
+      });
+    }
+    
+    // Filtere nach Suchtext
+    if (searchQuery && searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(wine => {
+        const name = wine.name?.toLowerCase() || '';
+        const winery = wine.winery?.toLowerCase() || '';
+        const vintage = wine.vintage?.toString() || '';
+        const region = wine.region?.toLowerCase() || '';
+        const grapeVariety = wine.grapeVariety?.toLowerCase() || '';
+        
+        return name.includes(query) ||
+               winery.includes(query) ||
+               vintage.includes(query) ||
+               region.includes(query) ||
+               grapeVariety.includes(query);
+      });
+    }
+    
+    return filtered;
+  };
+
+  // Gefilterte Weine
+  const filteredWines = filterWines(wines, searchText, showMyWines);
 
   // Scroll zum ausgewählten Wert, wenn Modal geöffnet wird
   useEffect(() => {
@@ -72,15 +148,12 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
       const currentUser = getCurrentUser();
       if (currentUser && currentUser.uid) {
         setCurrentUserId(currentUser.uid);
-        setBtp(currentUser?.btp ?? 0);
       } else {
         setCurrentUserId('test-456'); // Fallback
-        setBtp(0);
       }
     } catch (error) {
       console.error('❌ Fehler beim Laden der User-ID:', error);
       setCurrentUserId('test-456'); // Fallback
-      setBtp(0);
     }
   };
 
@@ -97,8 +170,42 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
   const loadWines = async () => {
     try {
       console.log('🔄 WeinboerseScreen: Loading wines...');
-      const availableWines = await getAvailableWines();
+      let availableWines = await getAvailableWines();
       console.log('✅ WeinboerseScreen: Loaded', availableWines.length, 'wines');
+      
+      // Prüfe und ergänze fehlende ownerZipCode für alte Weine
+      const winesToUpdate = [];
+      for (const wine of availableWines) {
+        if (!wine.ownerZipCode && wine.ownerId) {
+          try {
+            const ownerData = await getUser(wine.ownerId);
+            if (ownerData && ownerData.zipCode) {
+              winesToUpdate.push({
+                wineId: wine.id,
+                zipCode: ownerData.zipCode
+              });
+              // Aktualisiere auch im lokalen State
+              wine.ownerZipCode = ownerData.zipCode;
+            }
+          } catch (error) {
+            console.error(`❌ Fehler beim Laden der PLZ für Wein ${wine.id}:`, error);
+          }
+        }
+      }
+      
+      // Aktualisiere Weine in Firestore (nur wenn PLZ gefunden wurde)
+      if (winesToUpdate.length > 0) {
+        console.log(`🔄 Aktualisiere ${winesToUpdate.length} Weine mit fehlender PLZ...`);
+        await Promise.all(
+          winesToUpdate.map(({ wineId, zipCode }) =>
+            updateWine(wineId, { ownerZipCode: zipCode }).catch(error => {
+              console.error(`❌ Fehler beim Aktualisieren von Wein ${wineId}:`, error);
+            })
+          )
+        );
+        console.log('✅ Weine mit PLZ aktualisiert');
+      }
+      
       setWines(availableWines);
     } catch (error) {
       console.error('❌ WeinboerseScreen: Error loading wines:', error);
@@ -113,6 +220,7 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
   const handleWineImagePress = (wine) => {
     // Öffne Modal mit Wein-Details
     setSelectedWine(wine);
+    setCurrentImageIndex(0); // Reset auf erstes Bild
     setIsModalVisible(true);
   };
 
@@ -432,12 +540,6 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
                   <View style={styles.hamburgerLine} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.wishlistButton}
-                onPress={() => onNavigate('wunschliste')}
-              >
-                <Text style={styles.wishlistHeart}>♡</Text>
-              </TouchableOpacity>
             </View>
             
             {/* Bottle (Logo) Trade in der Mitte */}
@@ -459,14 +561,26 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
                 style={styles.profileIconContainer}
                 onPress={() => onNavigate('profil')}
               >
-                <View style={styles.profileIconCircle}>
-                  <Text style={styles.profileIconText}>P</Text>
-                </View>
+                {profileImage ? (
+                  <OptimizedImage
+                    source={{ uri: profileImage }}
+                    style={styles.profileIconImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.profileIconCircle}>
+                    <Text style={styles.profileIconText}>
+                      {getInitials(getCurrentUser())}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
-              <View style={styles.profileBtpBadge}>
-                <Text style={styles.profileBtpText}>{`${btp ?? 0} BTP`}</Text>
-              </View>
             </View>
+          </View>
+          
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
           
           {/* Header mit Überschrift */}
@@ -476,35 +590,108 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
             </View>
           </View>
           
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            <View style={styles.dashboardContainer}>
-              {isLoading && (
-                <Text style={styles.dashboardTitle}>
-                  Lade Weine...
-                </Text>
-              )}
-
-              {isLoading ? (
-                <View style={styles.loadingState}>
-                  <Text style={styles.loadingIcon}>⏳</Text>
-                  <Text style={styles.loadingText}>Weine werden geladen...</Text>
-                </View>
-              ) : wines.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyIcon}>🍷</Text>
-                  <Text style={styles.emptyTitle}>Keine Weine verfügbar</Text>
-                  <Text style={styles.emptySubtitle}>
-                    Schauen Sie später wieder vorbei!
+          {/* Toggle-Buttons für Ansicht */}
+          <View style={styles.viewToggleContainer}>
+            <TouchableOpacity
+              style={[
+                styles.viewToggleButton,
+                viewMode === 'container' && styles.viewToggleButtonActive
+              ]}
+              onPress={() => setViewMode('container')}
+            >
+              <Text style={[
+                styles.viewToggleButtonText,
+                viewMode === 'container' && styles.viewToggleButtonTextActive
+              ]}>
+                Kacheln
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.viewToggleButton,
+                viewMode === 'list' && styles.viewToggleButtonActive
+              ]}
+              onPress={() => setViewMode('list')}
+            >
+              <Text style={[
+                styles.viewToggleButtonText,
+                viewMode === 'list' && styles.viewToggleButtonTextActive
+              ]}>
+                Liste
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Suchfeld mit Toggle-Button */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Suche nach Name, Weingut, Jahrgang..."
+              placeholderTextColor="rgba(255, 255, 255, 0.5)"
+              value={searchText}
+              onChangeText={setSearchText}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchText.length > 0 && (
+              <TouchableOpacity
+                style={styles.searchClearButton}
+                onPress={() => setSearchText('')}
+              >
+                <Text style={styles.searchClearButtonText}>✕</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[
+                styles.showMyWinesButton,
+                !showMyWines && styles.showMyWinesButtonInactive
+              ]}
+              onPress={() => setShowMyWines(!showMyWines)}
+            >
+              <Text style={styles.showMyWinesButtonText}>
+                {showMyWines ? '👁️' : '👁️‍🗨️'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          {viewMode === 'container' ? (
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+              <View style={styles.dashboardContainer}>
+                {isLoading && (
+                  <Text style={styles.dashboardTitle}>
+                    Lade Weine...
                   </Text>
-                </View>
-              ) : (
-                <View style={styles.winesList}>
-                  {wines.map((wine, index) => {
+                )}
+
+                {isLoading ? (
+                  <View style={styles.loadingState}>
+                    <Text style={styles.loadingIcon}>⏳</Text>
+                    <Text style={styles.loadingText}>Weine werden geladen...</Text>
+                  </View>
+                ) : filteredWines.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyIcon}>🍷</Text>
+                    <Text style={styles.emptyTitle}>
+                      {searchText ? 'Keine Weine gefunden' : 'Keine Weine verfügbar'}
+                    </Text>
+                    <Text style={styles.emptySubtitle}>
+                      {searchText ? 'Versuchen Sie eine andere Suche' : 'Schauen Sie später wieder vorbei!'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.winesList}>
+                    {filteredWines.map((wine, index) => {
                     const currentUser = getCurrentUser && getCurrentUser();
                     const isMine = currentUser && (
                       (wine.ownerId && wine.ownerId === currentUser.uid) ||
                       (wine.owner && (wine.owner === currentUser.username || wine.owner === currentUser.email))
                     );
+                    
+                    // Berechne Entfernung, wenn User eingeloggt ist und beide PLZ vorhanden sind
+                    const distanceText = currentUser && currentUser.zipCode && wine.ownerZipCode && !isMine
+                      ? getDistanceText(currentUser.zipCode, wine.ownerZipCode)
+                      : null;
+                    
                     const rowStyle = [
                       styles.wineRow,
                       { 
@@ -520,30 +707,78 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
                         activeOpacity={0.8}
                         onPress={() => handleWineImagePress(wine)}
                       >
-                        {/* Nur Bild - Container besteht nur aus Bild */}
-                        <View style={styles.rowImageOnlyContainer}>
-                          {wine.labelImage ? (
-                            <OptimizedImage
-                              source={{ uri: wine.labelImage }}
-                              style={styles.rowImageOnly}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={styles.rowPlaceholderImageOnly}>
-                              <Text style={styles.placeholderTextOnly}>🍷</Text>
-                            </View>
-                          )}
+                        {/* Bildergalerie mit Swipe */}
+                        <View 
+                          style={styles.rowImageOnlyContainer}
+                          onLayout={(event) => {
+                            const { width } = event.nativeEvent.layout;
+                            // Speichere die Container-Breite für diesen Wein
+                            if (width && !wine._containerWidth) {
+                              wine._containerWidth = width;
+                            }
+                          }}
+                        >
+                          {(() => {
+                            const images = wine.labelImages || (wine.labelImage ? [wine.labelImage] : []);
+                            if (images.length === 0) {
+                              return (
+                                <View style={styles.rowPlaceholderImageOnly}>
+                                  <Text style={styles.placeholderTextOnly}>🍷</Text>
+                                </View>
+                              );
+                            }
+                            // Wenn nur ein Bild, zeige es direkt ohne ScrollView
+                            if (images.length === 1) {
+                              return (
+                                <View style={styles.singleImageContainer}>
+                                  <OptimizedImage
+                                    source={{ uri: images[0] }}
+                                    style={styles.rowImageOnly}
+                                    resizeMode="contain"
+                                  />
+                                </View>
+                              );
+                            }
+                            // Mehrere Bilder: ScrollView mit Swipe
+                            // Verwende die gemessene Container-Breite oder berechne sie
+                            const containerWidth = wine._containerWidth || (Dimensions.get('window').width * 0.48);
+                            return (
+                              <ScrollView
+                                horizontal
+                                pagingEnabled
+                                showsHorizontalScrollIndicator={false}
+                                style={styles.imageSwipeContainer}
+                                contentContainerStyle={styles.imageSwipeContent}
+                                scrollEventThrottle={16}
+                              >
+                                {images.map((imageUri, index) => (
+                                  <View key={index} style={[styles.imageWrapper, { width: containerWidth }]}>
+                                    <OptimizedImage
+                                      source={{ uri: imageUri }}
+                                      style={styles.rowImageOnly}
+                                      resizeMode="contain"
+                                    />
+                                  </View>
+                                ))}
+                              </ScrollView>
+                            );
+                          })()}
                           {/* Badge "Mein Wein" oben rechts (nur bei eigenen Weinen) */}
                           {isMine && (
                             <View style={styles.myWineBadge}>
                               <Text style={styles.myWineBadgeText}>Mein Wein</Text>
                             </View>
                           )}
-                          {/* Optional: Subtiler Overlay mit Wein-Name (optional) */}
+                          {/* Optional: Subtiler Overlay mit Wein-Name und Entfernung */}
                           <View style={styles.rowImageOverlay}>
                             <Text style={styles.rowImageOverlayText} numberOfLines={1}>
                               {wine.name}
                             </Text>
+                            {distanceText && (
+                              <Text style={styles.rowImageDistanceText} numberOfLines={1}>
+                                {distanceText}
+                              </Text>
+                            )}
                           </View>
                         </View>
                       </TouchableOpacity>
@@ -553,6 +788,95 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
               )}
             </View>
           </ScrollView>
+          ) : (
+            <View style={styles.content}>
+              <View style={styles.dashboardContainer}>
+                {isLoading ? (
+                  <View style={styles.loadingState}>
+                    <Text style={styles.loadingIcon}>⏳</Text>
+                    <Text style={styles.loadingText}>Weine werden geladen...</Text>
+                  </View>
+                ) : filteredWines.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyIcon}>🍷</Text>
+                    <Text style={styles.emptyTitle}>
+                      {searchText ? 'Keine Weine gefunden' : 'Keine Weine verfügbar'}
+                    </Text>
+                    <Text style={styles.emptySubtitle}>
+                      {searchText ? 'Versuchen Sie eine andere Suche' : 'Schauen Sie später wieder vorbei!'}
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={filteredWines}
+                    keyExtractor={(item) => item.id || item.wineIds?.[0] || `wine-${item.name}`}
+                    renderItem={({ item: wine }) => {
+                      const currentUser = getCurrentUser && getCurrentUser();
+                      const isMine = currentUser && (
+                        (wine.ownerId && wine.ownerId === currentUser.uid) ||
+                        (wine.owner && (wine.owner === currentUser.username || wine.owner === currentUser.email))
+                      );
+                      
+                      // Berechne Entfernung, wenn User eingeloggt ist und beide PLZ vorhanden sind
+                      const distanceText = currentUser && currentUser.zipCode && wine.ownerZipCode && !isMine
+                        ? getDistanceText(currentUser.zipCode, wine.ownerZipCode)
+                        : null;
+                      
+                      return (
+                        <TouchableOpacity
+                          style={styles.listItem}
+                          onPress={() => handleWineImagePress(wine)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.listItemImageContainer}>
+                            {(() => {
+                              const images = wine.labelImages || (wine.labelImage ? [wine.labelImage] : []);
+                              if (images.length === 0) {
+                                return (
+                                  <View style={styles.listItemPlaceholder}>
+                                    <Text style={styles.listItemPlaceholderText}>🍷</Text>
+                                  </View>
+                                );
+                              }
+                              return (
+                                <OptimizedImage
+                                  source={{ uri: images[0] }}
+                                  style={styles.listItemImage}
+                                  resizeMode="contain"
+                                />
+                              );
+                            })()}
+                            {/* Badge "Mein Wein" oben rechts (nur bei eigenen Weinen) */}
+                            {isMine && (
+                              <View style={styles.listItemMyWineBadge}>
+                                <Text style={styles.listItemMyWineBadgeText}>Mein Wein</Text>
+                              </View>
+                            )}
+                          </View>
+                          <View style={styles.listItemTextContainer}>
+                            <Text style={styles.listItemText} numberOfLines={2}>
+                              {wine.name}
+                            </Text>
+                            {distanceText && (
+                              <Text style={styles.listItemDistanceText} numberOfLines={1}>
+                                {distanceText}
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={10}
+                    windowSize={10}
+                    removeClippedSubviews={true}
+                  />
+                )}
+              </View>
+            </View>
+          )}
         </View>
         <Footer />
       </View>
@@ -586,19 +910,52 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
                   </TouchableOpacity>
                 </View>
 
-                {/* Wein-Bild */}
+                {/* Wein-Bildergalerie mit Swipe */}
                 <View style={styles.modalImageContainer}>
-                  {selectedWine.labelImage ? (
-                    <OptimizedImage
-                      source={{ uri: selectedWine.labelImage }}
-                      style={styles.modalImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.modalPlaceholderImage}>
-                      <Text style={styles.modalPlaceholderText}>🍷</Text>
-                    </View>
-                  )}
+                  {(() => {
+                    const images = selectedWine.labelImages || (selectedWine.labelImage ? [selectedWine.labelImage] : []);
+                    if (images.length === 0) {
+                      return (
+                        <View style={styles.modalPlaceholderImage}>
+                          <Text style={styles.modalPlaceholderText}>🍷</Text>
+                        </View>
+                      );
+                    }
+                    const screenWidth = Dimensions.get('window').width;
+                    return (
+                      <>
+                        <ScrollView
+                          horizontal
+                          pagingEnabled
+                          showsHorizontalScrollIndicator={false}
+                          style={styles.modalImageSwipeContainer}
+                          contentContainerStyle={styles.modalImageSwipeContent}
+                          onScroll={(event) => {
+                            const offsetX = event.nativeEvent.contentOffset.x;
+                            const index = Math.round(offsetX / event.nativeEvent.layoutMeasurement.width);
+                            setCurrentImageIndex(index);
+                          }}
+                          scrollEventThrottle={16}
+                        >
+                          {images.map((imageUri, index) => (
+                            <OptimizedImage
+                              key={index}
+                              source={{ uri: imageUri }}
+                              style={[styles.modalImage, { width: screenWidth }]}
+                              resizeMode="cover"
+                            />
+                          ))}
+                        </ScrollView>
+                        {images.length > 1 && (
+                          <View style={styles.imageIndicatorContainer}>
+                            <Text style={styles.imageIndicatorText}>
+                              {currentImageIndex + 1} / {images.length}
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    );
+                  })()}
                 </View>
 
                 {/* Wein-Informationen */}
@@ -630,10 +987,25 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
                   )}
                   
                   <Text style={styles.modalPrice}>
-                    💰 {selectedWine.price ? `${selectedWine.price}€` : 'Preis auf Anfrage'}
+                    💰 {selectedWine.price ? `${parseFloat(selectedWine.price).toFixed(2)}€` : 'Preis auf Anfrage'}
                   </Text>
                   
                   <Text style={styles.modalOwner}>👤 von {selectedWine.owner}</Text>
+                  
+                  {(() => {
+                    const currentUser = getCurrentUser();
+                    const isMine = currentUser && (
+                      (selectedWine.ownerId && selectedWine.ownerId === currentUser.uid) ||
+                      (selectedWine.owner && (selectedWine.owner === currentUser.username || selectedWine.owner === currentUser.email))
+                    );
+                    const distanceText = currentUser && currentUser.zipCode && selectedWine.ownerZipCode && !isMine
+                      ? getDistanceText(currentUser.zipCode, selectedWine.ownerZipCode)
+                      : null;
+                    
+                    return distanceText ? (
+                      <Text style={styles.modalDistanceText}>📍 {distanceText}</Text>
+                    ) : null;
+                  })()}
                   
                   {selectedWine.description && (
                     <View style={styles.modalDescriptionContainer}>
@@ -825,7 +1197,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
   logoHeaderCenter: {
     flexDirection: 'row',
@@ -844,8 +1216,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -859,41 +1231,50 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileIconContainer: {
-    width: 40,
-    height: 40,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  profileIconImage: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+  },
   profileIconText: {
     fontSize: 25,
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
-  profileBtpBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#DAA520',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  profileBtpText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2c2c2c',
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
     textAlign: 'center',
+    opacity: 0.85,
     letterSpacing: 0.5,
+    fontStyle: 'italic',
   },
   headerLeft: {
     alignItems: 'center',
@@ -912,7 +1293,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginTop: 0,
     minHeight: 60,
-    borderTopWidth: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
@@ -920,12 +1302,24 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
     marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -937,6 +1331,10 @@ const styles = StyleSheet.create({
   wishlistButton: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  wishlistHeartContainer: {
+    position: 'relative',
   },
   wishlistHeart: {
     fontSize: 24,
@@ -944,6 +1342,28 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.4)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+  },
+  wishlistBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FF4444',
+    borderRadius: 12,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 1000,
+    elevation: 10,
+  },
+  wishlistBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    paddingHorizontal: 4,
   },
   headerCenter: {
     flex: 1,
@@ -982,15 +1402,11 @@ const styles = StyleSheet.create({
     color: '#2c2c2c', // Dunkler Text
   },
   greeting: {
-    fontSize: 30,
-    fontWeight: '600',
-    color: '#DAA520', // Warmes Gold
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 0.5,
-    // Eleganter Gradient-Effekt durch Text-Shadow
-    textShadowColor: 'rgba(218, 165, 32, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   content: {
@@ -1052,7 +1468,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF', // Weiße Border
     padding: 0, // Kein Padding innerhalb des Containers - Bild soll bis zum Rand gehen
     // Verbesserte Schatten für Tiefe
-    shadowColor: '#DAA520', // Warmes Gold Schatten
+    shadowColor: '#a9c7cd', // Warmes Gold Schatten
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -1062,6 +1478,8 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     position: 'relative',
+    backgroundColor: '#f5f5f5', // Heller Hintergrund für bessere Sichtbarkeit
+    overflow: 'hidden',
   },
   myWineBadge: {
     position: 'absolute',
@@ -1088,9 +1506,29 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  singleImageContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  imageWrapper: {
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
   rowImageOnly: {
     width: '100%',
     height: '100%',
+  },
+  imageSwipeContainer: {
+    width: '100%',
+    height: '100%',
+  },
+  imageSwipeContent: {
+    alignItems: 'center',
   },
   rowPlaceholderImageOnly: {
     width: '100%',
@@ -1104,7 +1542,7 @@ const styles = StyleSheet.create({
   placeholderTextOnly: {
     fontSize: 64,
     opacity: 0.6,
-    color: '#DAA520', // Warmes Gold für Placeholder-Emoji
+    color: '#a9c7cd', // Warmes Gold für Placeholder-Emoji
   },
   rowImageOverlay: {
     position: 'absolute',
@@ -1122,6 +1560,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  rowImageDistanceText: {
+    color: '#666666', // Grauer Text für Entfernung
+    fontSize: 11,
+    fontWeight: 'normal',
+    textAlign: 'center',
+    marginTop: 2,
   },
   rowTopSection: {
     flexDirection: 'row',
@@ -1253,7 +1698,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    shadowColor: '#DAA520',
+    shadowColor: '#a9c7cd',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 25,
@@ -1295,7 +1740,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   modalImage: {
-    width: '100%',
     height: '100%',
   },
   modalPlaceholderImage: {
@@ -1331,7 +1775,7 @@ const styles = StyleSheet.create({
   modalPrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#DAA520', // Warmes Gold für Preis
+    color: '#a9c7cd', // Warmes Gold für Preis
     marginTop: 12,
     marginBottom: 12,
     textAlign: 'center',
@@ -1341,6 +1785,13 @@ const styles = StyleSheet.create({
     color: '#666666', // Mittlerer Grauton
     marginBottom: 12,
     textAlign: 'center',
+  },
+  modalDistanceText: {
+    fontSize: 14,
+    color: '#a9c7cd', // Warmes Gold für Entfernung
+    marginBottom: 12,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   modalDescriptionContainer: {
     marginTop: 12,
@@ -1437,7 +1888,7 @@ const styles = StyleSheet.create({
   },
   pickerItemTextSelected: {
     fontSize: 40,
-    color: '#DAA520',
+    color: '#a9c7cd',
     fontWeight: 'bold',
   },
   pickerHighlight: {
@@ -1448,7 +1899,7 @@ const styles = StyleSheet.create({
     height: 50,
     borderTopWidth: 2,
     borderBottomWidth: 2,
-    borderColor: '#DAA520',
+    borderColor: '#a9c7cd',
     backgroundColor: 'rgba(218, 165, 32, 0.05)',
     pointerEvents: 'none',
   },
@@ -1457,7 +1908,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   modalButtonConfirm: {
-    backgroundColor: '#DAA520',
+    backgroundColor: '#a9c7cd',
   },
   modalButtonCancel: {
     backgroundColor: '#E0E0E0',
@@ -1471,5 +1922,166 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#2c2c2c',
+  },
+  viewToggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#2c2c2c',
+  },
+  viewToggleButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+    marginHorizontal: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  viewToggleButtonActive: {
+    backgroundColor: '#DAA520', // Gold
+    borderColor: '#DAA520',
+  },
+  viewToggleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  viewToggleButtonTextActive: {
+    color: '#2c2c2c',
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 5,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  listItemImageContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#f5f5f5',
+    marginRight: 12,
+  },
+  listItemTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  listItemImage: {
+    width: 80,
+    height: 80,
+  },
+  listItemPlaceholder: {
+    width: 80,
+    height: 80,
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listItemPlaceholderText: {
+    fontSize: 32,
+    opacity: 0.6,
+  },
+  listItemText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c2c2c',
+    marginBottom: 4,
+  },
+  listItemDistanceText: {
+    fontSize: 12,
+    color: '#4a4a4a',
+    opacity: 0.8,
+  },
+  listItemMyWineBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(218, 165, 32, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 1)',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  listItemMyWineBadgeText: {
+    color: '#2c2c2c',
+    fontSize: 9,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#2c2c2c',
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    color: '#FFFFFF',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    marginRight: 8,
+  },
+  searchClearButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  searchClearButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  showMyWinesButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(218, 165, 32, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 1)',
+  },
+  showMyWinesButtonInactive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  showMyWinesButtonText: {
+    fontSize: 18,
   },
 });

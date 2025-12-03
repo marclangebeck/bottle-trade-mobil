@@ -9,11 +9,12 @@ import {
   StatusBar,
   Alert
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
-import { collection, getDocs, query, where, doc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cleanupOldTradeRequests, migrateAllLocalWineImagesToStorage, checkImageMigrationStatus } from '../services/database-web';
@@ -31,57 +32,85 @@ export default function AdminDashboardScreen({
 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [activeUsers, setActiveUsers] = useState(0);
-  const [openTradeRequests, setOpenTradeRequests] = useState(0);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
-  const [isLoadingTradeRequests, setIsLoadingTradeRequests] = useState(true);
+  const [winesInBoerse, setWinesInBoerse] = useState(0);
+  const [winesInRegals, setWinesInRegals] = useState(0);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationStats, setMigrationStats] = useState(null);
   const [migrationStatus, setMigrationStatus] = useState(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
-  
-  // Berechne die echten Statistiken
-  const activeSurveys = surveys.filter(survey => survey.status === 'active').length;
-  const unreadNotificationCount = notifications.filter(notification => !notification.read).length;
-  const totalNewsletters = newsletters.length;
-  const totalSystemMessages = systemMessages.length;
 
   useEffect(() => {
-    loadActiveUsers();
-    loadOpenTradeRequests();
+    // Echtzeit-Subscriptions für Statistiken
+    const cleanup = setupRealtimeStats();
+    
+    // Cleanup bei Unmount
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+    };
   }, []);
 
-  const loadActiveUsers = async () => {
-    try {
-      setIsLoadingUsers(true);
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const usersCount = usersSnapshot.docs.length;
-      setActiveUsers(usersCount);
-      console.log(`✅ AdminDashboard: ${usersCount} User gefunden`);
-    } catch (error) {
-      console.error('❌ Fehler beim Laden der User-Anzahl:', error);
-      setActiveUsers(0);
-    } finally {
-      setIsLoadingUsers(false);
-    }
-  };
+  const setupRealtimeStats = () => {
+    setIsLoadingStats(true);
+    
+    // 1. Echtzeit-Subscription für aktive User (nicht gesperrt)
+    const usersUnsubscribe = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        const activeCount = snapshot.docs.filter(doc => {
+          const userData = doc.data();
+          return !userData.isBlocked; // Nur nicht gesperrte User
+        }).length;
+        setActiveUsers(activeCount);
+        console.log(`✅ AdminDashboard: ${activeCount} aktive User`);
+        setIsLoadingStats(false);
+      },
+      (error) => {
+        console.error('❌ Fehler bei User-Subscription:', error);
+        setActiveUsers(0);
+        setIsLoadingStats(false);
+      }
+    );
 
-  const loadOpenTradeRequests = async () => {
-    try {
-      setIsLoadingTradeRequests(true);
-      const tradeRequestsQuery = query(
-        collection(db, 'tradeRequests'),
-        where('status', '==', 'pending')
-      );
-      const tradeRequestsSnapshot = await getDocs(tradeRequestsQuery);
-      const pendingCount = tradeRequestsSnapshot.docs.length;
-      setOpenTradeRequests(pendingCount);
-      console.log(`✅ AdminDashboard: ${pendingCount} offene Trade Requests gefunden`);
-    } catch (error) {
-      console.error('❌ Fehler beim Laden der Trade Requests:', error);
-      setOpenTradeRequests(0);
-    } finally {
-      setIsLoadingTradeRequests(false);
-    }
+    // 2. Echtzeit-Subscription für Weine in Weinbörse (öffentlich)
+    const publicWinesUnsubscribe = onSnapshot(
+      query(collection(db, 'wines'), where('status', '==', 'public')),
+      (snapshot) => {
+        const count = snapshot.docs.length;
+        setWinesInBoerse(count);
+        console.log(`✅ AdminDashboard: ${count} Weine in Weinbörse`);
+      },
+      (error) => {
+        console.error('❌ Fehler bei Weinbörse-Subscription:', error);
+        setWinesInBoerse(0);
+      }
+    );
+
+    // 3. Echtzeit-Subscription für alle Weine in Weinregals (nicht getauscht)
+    const allWinesUnsubscribe = onSnapshot(
+      collection(db, 'wines'),
+      (snapshot) => {
+        const count = snapshot.docs.filter(doc => {
+          const wineData = doc.data();
+          return wineData.status !== 'traded'; // Alle Weine außer getauschte
+        }).length;
+        setWinesInRegals(count);
+        console.log(`✅ AdminDashboard: ${count} Weine in allen Weinregals`);
+      },
+      (error) => {
+        console.error('❌ Fehler bei Weinregal-Subscription:', error);
+        setWinesInRegals(0);
+      }
+    );
+
+    // Cleanup-Funktion gibt alle Unsubscribe-Funktionen zurück
+    return () => {
+      usersUnsubscribe();
+      publicWinesUnsubscribe();
+      allWinesUnsubscribe();
+    };
   };
   const adminFeatures = [
     {
@@ -109,18 +138,10 @@ export default function AdminDashboardScreen({
       bgColor: '#FFF3E0' // Hellorange
     },
     {
-      id: 'trades',
-      title: 'Trade-Verwaltung',
-      description: 'Trades, Chats und Hinweise einzeln löschen',
-      icon: '🔄',
-      color: '#FF5722',
-      bgColor: '#FFEBEE' // Hellrot
-    },
-    {
-      id: 'chats',
-      title: 'Chat-Verwaltung',
-      description: 'Alle Chats anzeigen und löschen',
-      icon: '💬',
+      id: 'data-management',
+      title: 'Daten-Verwaltung',
+      description: 'Chats, Hinweise und Trades verwalten',
+      icon: '🗂️',
       color: '#9C27B0',
       bgColor: '#F3E5F5' // Helllila
     },
@@ -135,10 +156,26 @@ export default function AdminDashboardScreen({
     {
       id: 'users',
       title: 'User-Verwaltung',
-      description: 'Alle User anzeigen und löschen',
+      description: 'User anzeigen, löschen und sperren',
       icon: '👤',
-      color: '#2196F3',
-      bgColor: '#E1F5FE' // Helles Cyan
+      color: '#607D8B',
+      bgColor: '#ECEFF1' // Hellgrau
+    },
+    {
+      id: 'wine-ki',
+      title: 'Weinregal KI',
+      description: 'Weinregal mit KI-Analyse befüllen',
+      icon: '🤖',
+      color: '#a9c7cd',
+      bgColor: '#FFF8DC' // Hellgelb/Gold
+    },
+    {
+      id: 'shop',
+      title: 'Shop-Verwaltung',
+      description: 'Produkte verwalten und Bestellungen einsehen',
+      icon: '🛍️',
+      color: '#a9c7cd',
+      bgColor: '#FFF8DC' // Hellgelb/Gold
     }
   ];
 
@@ -220,17 +257,20 @@ export default function AdminDashboardScreen({
       case 'system-announcements':
         onNavigate('admin-system-messages');
         break;
-      case 'trades':
-        onNavigate('admin-trades');
-        break;
-      case 'chats':
-        onNavigate('admin-chats');
+      case 'data-management':
+        onNavigate('admin-data-management');
         break;
       case 'wines':
         onNavigate('admin-wines');
         break;
       case 'users':
         onNavigate('admin-users');
+        break;
+      case 'wine-ki':
+        onNavigate('weinregal-ki');
+        break;
+      case 'shop':
+        onNavigate('admin-shop');
         break;
       default:
         console.log('Feature not implemented yet:', featureId);
@@ -390,7 +430,7 @@ export default function AdminDashboardScreen({
               
               if (batchCount > 0) await currentBatch.commit();
               
-              await loadActiveUsers();
+              // Statistiken werden automatisch via Echtzeit-Subscription aktualisiert
               Alert.alert('✅ User gelöscht', `${deletedCount} User wurden gelöscht.\nAdmin-Account wurde beibehalten.`);
             } catch (error) {
               console.error('❌ Fehler beim Löschen der User:', error);
@@ -729,8 +769,7 @@ export default function AdminDashboardScreen({
                 console.warn('⚠️ Fehler beim Löschen von AsyncStorage:', asyncError);
               }
               
-              // Aktualisiere lokale Stats
-              await loadActiveUsers();
+              // Statistiken werden automatisch via Echtzeit-Subscription aktualisiert
               
               Alert.alert(
                 '✅ Bereinigung abgeschlossen',
@@ -779,15 +818,17 @@ export default function AdminDashboardScreen({
           {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
           <View style={styles.logoHeaderContainer}>
             {/* Hamburger-Menü links */}
-            <View style={styles.hamburgerContainer}>
-              <TouchableOpacity 
-                style={styles.hamburgerButton}
-                onPress={() => setIsMenuVisible(!isMenuVisible)}
-              >
-                <View style={styles.hamburgerLine} />
-                <View style={styles.hamburgerLine} />
-                <View style={styles.hamburgerLine} />
-              </TouchableOpacity>
+            <View style={styles.headerLeft}>
+              <View style={styles.hamburgerContainer}>
+                <TouchableOpacity 
+                  style={styles.hamburgerButton}
+                  onPress={() => setIsMenuVisible(!isMenuVisible)}
+                >
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                  <View style={styles.hamburgerLine} />
+                </TouchableOpacity>
+              </View>
             </View>
             
             {/* Bottle (Logo) Trade in der Mitte */}
@@ -804,256 +845,184 @@ export default function AdminDashboardScreen({
             </View>
             
             {/* Profil-Icon rechts */}
-            <TouchableOpacity 
-              style={styles.profileIconContainer}
-              onPress={() => onNavigate('profil')}
-            >
-              <View style={styles.profileIconCircle}>
-                <Text style={styles.profileIconText}>P</Text>
-              </View>
-            </TouchableOpacity>
+            <View style={styles.profileSection}>
+              <TouchableOpacity 
+                style={styles.profileIconContainer}
+                onPress={() => onNavigate('profil')}
+              >
+                <View style={styles.profileIconCircle}>
+                  <Text style={styles.profileIconText}>A</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
           
           {/* Header mit Überschrift */}
           <View style={styles.header}>
             <View style={styles.headerCenter}>
-              <View style={styles.greetingContainer}>
-                <Text style={styles.greeting}>Admin-Bereich</Text>
-              </View>
+              <Text style={styles.greeting}>Admin-Bereich</Text>
             </View>
           </View>
           
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+<ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.dashboardContainer}>
+              {/* Überschrift für Admin Features */}
+              <Text style={styles.sectionTitle}>⚙️ Verwaltungs-Funktionen</Text>
+              
               {/* Admin Features Grid */}
               <View style={styles.featuresGrid}>
                 {adminFeatures.map((feature, index) => (
                   <TouchableOpacity 
                     key={feature.id}
-                    style={[
-                      styles.featureCard, 
-                      { backgroundColor: feature.bgColor },
-                      index % 2 === 1 ? styles.featureCardRight : null,
-                      index >= 2 ? styles.featureCardBottom : null
-                    ]}
+                    style={styles.featureCardTouchable}
                     onPress={() => handleFeaturePress(feature.id)}
-                    activeOpacity={0.85}
+                    activeOpacity={0.7}
                   >
-                    <View style={styles.featureIconContainer}>
+                    <LinearGradient
+                      colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.featureCardGlass}
+                    >
                       <Text style={styles.featureIcon}>{feature.icon}</Text>
-                    </View>
-                    <View style={styles.featureInfoContainer}>
                       <Text style={styles.featureTitle}>{feature.title}</Text>
                       <Text style={styles.featureDescription} numberOfLines={2}>{feature.description}</Text>
-                    </View>
+                    </LinearGradient>
                   </TouchableOpacity>
                 ))}
               </View>
 
               {/* Quick Stats */}
               <View style={styles.statsContainer}>
-                <Text style={styles.statsTitle}>Schnellübersicht</Text>
-                <View style={styles.statsList}>
-                  <View style={[styles.statCard, { backgroundColor: '#E1F5FE' }]}>
-                    <Text style={styles.statNumber}>{activeUsers}</Text>
-                    <Text style={styles.statLabel}>Aktive Benutzer</Text>
+                <Text style={styles.statsTitleWhite}>📊 Schnellübersicht</Text>
+                {isLoadingStats ? (
+                  <View style={styles.statsLoadingContainer}>
+                    <Text style={styles.statsLoadingText}>Lade Statistiken...</Text>
                   </View>
-                  <View style={[styles.statCard, styles.statCardRight, { backgroundColor: '#FFF3E0' }]}>
-                    <Text style={styles.statNumber}>{openTradeRequests}</Text>
-                    <Text style={styles.statLabel}>Offene Tausch-Anfragen</Text>
+                ) : (
+                  <View style={styles.statsList}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      style={styles.statCardTouchable}
+                    >
+                      <LinearGradient
+                        colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.statCardGlass}
+                      >
+                        <Text style={styles.statLabel}>Aktive User</Text>
+                        <Text style={styles.statNumber}>{activeUsers}</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      style={styles.statCardTouchable}
+                    >
+                      <LinearGradient
+                        colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.statCardGlass}
+                      >
+                        <Text style={styles.statLabel}>Weine in Weinbörse</Text>
+                        <Text style={styles.statNumber}>{winesInBoerse}</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      style={styles.statCardTouchable}
+                    >
+                      <LinearGradient
+                        colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.statCardGlass}
+                      >
+                        <Text style={styles.statLabel}>Weine in Weinregals</Text>
+                        <Text style={styles.statNumber}>{winesInRegals}</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
                   </View>
-                  <View style={[styles.statCard, styles.statCardBottom, { backgroundColor: '#E8F5E9' }]}>
-                    <Text style={styles.statNumber}>{activeSurveys}</Text>
-                    <Text style={styles.statLabel}>Aktive Umfragen</Text>
-                  </View>
-                  <View style={[styles.statCard, styles.statCardRight, styles.statCardBottom, { backgroundColor: '#F3E5F5' }]}>
-                    <Text style={styles.statNumber}>{unreadNotificationCount}</Text>
-                    <Text style={styles.statLabel}>Ungelesene Nachrichten</Text>
-                  </View>
-                </View>
+                )}
               </View>
 
-              {/* PHASE3: Separate Datenbereinigung Buttons */}
-              <View style={styles.cleanupContainer}>
-                <Text style={styles.cleanupSectionTitle}>🔧 Einzelne Datenbereinigung</Text>
-                
-                <View style={styles.cleanupButtonsGrid}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.cleanupButtonSmall, 
-                      { backgroundColor: '#E8F5E9' },
-                      0 % 2 === 1 ? styles.cleanupButtonSmallRight : null,
-                      0 >= 2 ? styles.cleanupButtonSmallBottom : null
-                    ]}
-                    onPress={handleCleanupUsers}
-                    activeOpacity={0.85}
+              {/* Debug-Funktionen */}
+              <View style={styles.debugContainer}>
+                <Text style={styles.debugSectionTitleWhite}>🔧 System-Funktionen</Text>
+                <View style={styles.debugButtonsGrid}>
+                  <TouchableOpacity
+                    style={styles.debugButtonCardTouchable}
+                    onPress={handleShowFirestoreData}
+                    activeOpacity={0.7}
                   >
-                    <View style={styles.cleanupButtonIconContainer}>
-                      <Text style={styles.cleanupButtonIconSmall}>👤</Text>
-                    </View>
-                    <View style={styles.cleanupButtonInfoContainer}>
-                      <Text style={styles.cleanupButtonTextSmall}>User löschen</Text>
-                      <Text style={styles.cleanupButtonDescriptionSmall} numberOfLines={2}>(außer Admin)</Text>
-                    </View>
+                    <LinearGradient
+                      colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.debugButtonCardGlass}
+                    >
+                      <Text style={styles.debugButtonIconCard}>📊</Text>
+                      <Text style={styles.debugButtonTitle}>Firestore-Daten</Text>
+                      <Text style={styles.debugButtonDescriptionCard} numberOfLines={2}>Alle Daten anzeigen</Text>
+                    </LinearGradient>
                   </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.cleanupButtonSmall, 
-                      { backgroundColor: '#EFEBE9' },
-                      1 % 2 === 1 ? styles.cleanupButtonSmallRight : null,
-                      1 >= 2 ? styles.cleanupButtonSmallBottom : null
-                    ]}
-                    onPress={handleCleanupWines}
-                    activeOpacity={0.85}
+
+                  <TouchableOpacity
+                    style={styles.debugButtonCardTouchable}
+                    onPress={handleCheckMigrationStatus}
+                    disabled={isCheckingStatus}
+                    activeOpacity={0.7}
                   >
-                    <View style={styles.cleanupButtonIconContainer}>
-                      <Text style={styles.cleanupButtonIconSmall}>🍷</Text>
-                    </View>
-                    <View style={styles.cleanupButtonInfoContainer}>
-                      <Text style={styles.cleanupButtonTextSmall}>Weine löschen</Text>
-                      <Text style={styles.cleanupButtonDescriptionSmall} numberOfLines={2}>(alle Weine)</Text>
-                    </View>
+                    <LinearGradient
+                      colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.debugButtonCardGlass}
+                    >
+                      <Text style={styles.debugButtonIconCard}>🔍</Text>
+                      <Text style={styles.debugButtonTitle}>
+                        {isCheckingStatus ? 'Status prüfen...' : 'Migrations-Status'}
+                      </Text>
+                      <Text style={styles.debugButtonDescriptionCard} numberOfLines={2}>
+                        {migrationStatus 
+                          ? `✅ ${migrationStatus.migrated} | ⚠️ ${migrationStatus.local}`
+                          : 'Bild-Status prüfen'
+                        }
+                      </Text>
+                    </LinearGradient>
                   </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.cleanupButtonSmall, 
-                      { backgroundColor: '#F3E5F5' },
-                      2 % 2 === 1 ? styles.cleanupButtonSmallRight : null,
-                      2 >= 2 ? styles.cleanupButtonSmallBottom : null
-                    ]}
-                    onPress={handleCleanupChats}
-                    activeOpacity={0.85}
+
+                  <TouchableOpacity
+                    style={styles.debugButtonCardTouchable}
+                    onPress={handleMigrateImages}
+                    disabled={isMigrating || isCheckingStatus}
+                    activeOpacity={0.7}
                   >
-                    <View style={styles.cleanupButtonIconContainer}>
-                      <Text style={styles.cleanupButtonIconSmall}>💬</Text>
-                    </View>
-                    <View style={styles.cleanupButtonInfoContainer}>
-                      <Text style={styles.cleanupButtonTextSmall}>Chats/Hinweise löschen</Text>
-                      <Text style={styles.cleanupButtonDescriptionSmall} numberOfLines={2}>(alle Chats & Hinweise)</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.cleanupButtonSmall, 
-                      { backgroundColor: '#E8F5E9' },
-                      3 % 2 === 1 ? styles.cleanupButtonSmallRight : null,
-                      3 >= 2 ? styles.cleanupButtonSmallBottom : null
-                    ]}
-                    onPress={handleCleanupOldTradeRequests}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.cleanupButtonIconContainer}>
-                      <Text style={styles.cleanupButtonIconSmall}>🧹</Text>
-                    </View>
-                    <View style={styles.cleanupButtonInfoContainer}>
-                      <Text style={styles.cleanupButtonTextSmall}>Alte Trade Requests bereinigen</Text>
-                      <Text style={styles.cleanupButtonDescriptionSmall} numberOfLines={2}>(nur rejected/accepted)</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.cleanupButtonSmall, 
-                      { backgroundColor: '#FFF3E0' },
-                      4 % 2 === 1 ? styles.cleanupButtonSmallRight : null,
-                      4 >= 2 ? styles.cleanupButtonSmallBottom : null
-                    ]}
-                    onPress={handleCleanupTradeRequests}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.cleanupButtonIconContainer}>
-                      <Text style={styles.cleanupButtonIconSmall}>🔄</Text>
-                    </View>
-                    <View style={styles.cleanupButtonInfoContainer}>
-                      <Text style={styles.cleanupButtonTextSmall}>Alle Trade Requests löschen</Text>
-                      <Text style={styles.cleanupButtonDescriptionSmall} numberOfLines={2}>(inkl. pending)</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.cleanupButtonSmall, 
-                      { backgroundColor: '#E1F5FE' },
-                      5 % 2 === 1 ? styles.cleanupButtonSmallRight : null,
-                      5 >= 2 ? styles.cleanupButtonSmallBottom : null
-                    ]}
-                    onPress={handleCleanupNotifications}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.cleanupButtonIconContainer}>
-                      <Text style={styles.cleanupButtonIconSmall}>🔔</Text>
-                    </View>
-                    <View style={styles.cleanupButtonInfoContainer}>
-                      <Text style={styles.cleanupButtonTextSmall}>Notifications löschen</Text>
-                      <Text style={styles.cleanupButtonDescriptionSmall} numberOfLines={2}>(alle Notifications)</Text>
-                    </View>
+                    <LinearGradient
+                      colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.debugButtonCardGlass}
+                    >
+                      <Text style={styles.debugButtonIconCard}>🖼️</Text>
+                      <Text style={styles.debugButtonTitle}>
+                        {isMigrating ? 'Migration läuft...' : 'Bild-Migration'}
+                      </Text>
+                      <Text style={styles.debugButtonDescriptionCard} numberOfLines={2}>
+                        {migrationStats
+                          ? `✅ ${migrationStats.success} | ❌ ${migrationStats.failed}`
+                          : 'Bilder migrieren'
+                        }
+                      </Text>
+                    </LinearGradient>
                   </TouchableOpacity>
                 </View>
-                
-                <Text style={styles.cleanupSectionTitle}>🗑️ Komplette Datenbereinigung</Text>
-                <TouchableOpacity 
-                  style={styles.cleanupButton}
-                  onPress={() => handleCleanupDatabase()}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.cleanupButtonIcon}>🗑️</Text>
-                  <Text style={styles.cleanupButtonText}>Alle Daten löschen</Text>
-                  <Text style={styles.cleanupButtonDescription}>Alle Daten außer Admin löschen</Text>
-                </TouchableOpacity>
-                
-                {/* Firestore-Daten anzeigen Button */}
-                <TouchableOpacity
-                  style={styles.debugButton}
-                  onPress={handleShowFirestoreData}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.debugButtonIcon}>📊</Text>
-                  <Text style={styles.debugButtonText}>Firestore-Daten anzeigen</Text>
-                  <Text style={styles.debugButtonDescription}>Zeige alle vorhandenen Daten in Firestore</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.debugButton, isCheckingStatus && styles.debugButtonDisabled]}
-                  onPress={handleCheckMigrationStatus}
-                  disabled={isCheckingStatus}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.debugButtonIcon}>🔍</Text>
-                  <Text style={styles.debugButtonText}>
-                    {isCheckingStatus ? 'Status wird geprüft...' : 'Migrations-Status prüfen'}
-                  </Text>
-                  <Text style={styles.debugButtonDescription}>
-                    Zeigt an, welche Bilder migriert sind und welche noch lokal sind
-                  </Text>
-                  {migrationStatus && (
-                    <Text style={styles.migrationStats}>
-                      Gesamt: {migrationStatus.total} | ✅ Migriert: {migrationStatus.migrated} | ⚠️ Lokal: {migrationStatus.local} | ❌ Kein Bild: {migrationStatus.noImage}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.debugButton, isMigrating && styles.debugButtonDisabled]}
-                  onPress={handleMigrateImages}
-                  disabled={isMigrating || isCheckingStatus}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.debugButtonIcon}>🖼️</Text>
-                  <Text style={styles.debugButtonText}>
-                    {isMigrating ? 'Migration läuft...' : 'Bild-Migration durchführen'}
-                  </Text>
-                  <Text style={styles.debugButtonDescription}>
-                    Migriert alle lokalen Weinbilder zu Firebase Storage
-                  </Text>
-                  {migrationStats && (
-                    <Text style={styles.migrationStats}>
-                      Erfolgreich: {migrationStats.success} | Fehlgeschlagen: {migrationStats.failed} | Übersprungen: {migrationStats.skipped}
-                    </Text>
-                  )}
-                </TouchableOpacity>
               </View>
             </View>
           </ScrollView>
@@ -1081,13 +1050,17 @@ const styles = StyleSheet.create({
   },
   logoHeaderContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
-    borderBottomWidth: 0,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
+  },
+  headerLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
   },
   logoHeaderCenter: {
     flexDirection: 'row',
@@ -1106,8 +1079,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1115,16 +1088,26 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
   },
-  profileIconContainer: {
-    width: 40,
-    height: 40,
+  profileSection: {
+    minWidth: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  profileIconContainer: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
   profileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
@@ -1132,33 +1115,64 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   profileIconText: {
-    fontSize: 18,
+    fontSize: 25,
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    paddingTop: 25,
-    paddingBottom: 25,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
     backgroundColor: '#2c2c2c',
     position: 'relative',
     marginTop: 0,
-    minHeight: 70,
-    borderTopWidth: 0,
-    borderBottomWidth: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   hamburgerContainer: {
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -1176,30 +1190,12 @@ const styles = StyleSheet.create({
     width: 80,
     alignItems: 'center',
   },
-  greetingContainer: {
-    backgroundColor: 'rgba(255, 215, 0, 0.2)',
-    borderRadius: 15,
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 215, 0, 0.5)',
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
   greeting: {
-    fontSize: 45,
-    fontWeight: '900',
-    color: '#FFD700',
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'Snell Roundhand' : 'serif',
-    fontStyle: 'italic',
-    letterSpacing: 1.5,
-    textShadowColor: 'rgba(255, 215, 0, 0.9)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   dashboardButton: {
@@ -1228,50 +1224,60 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    gap: 10,
   },
-  featureCard: {
-    height: 88,
-    width: '50%',
-    flexDirection: 'row',
+  featureCardTouchable: {
+    flex: 1,
+    minWidth: '30%',
+  },
+  featureCardGlass: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(0,0,0,0.18)',
-  },
-  featureCardRight: {
-    borderRightWidth: 0,
-  },
-  featureCardBottom: {
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(0,0,0,0.18)',
-  },
-  featureIconContainer: {
-    width: 50,
-    height: 50,
-    marginRight: 8,
     justifyContent: 'center',
-    alignItems: 'center',
+    minHeight: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: 'hidden',
   },
   featureIcon: {
-    fontSize: 28,
-  },
-  featureInfoContainer: {
-    flex: 1,
-    justifyContent: 'center',
+    fontSize: 32,
+    marginBottom: 8,
   },
   featureTitle: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#2f3a3b',
-    marginBottom: 2,
+    color: '#FFFFFF',
+    marginBottom: 4,
+    textAlign: 'center',
+    opacity: 0.95,
   },
   featureDescription: {
     fontSize: 11,
-    color: '#4b4b4b',
+    color: '#FFFFFF',
     lineHeight: 13,
+    textAlign: 'center',
+    opacity: 0.75,
   },
   statsContainer: {
     marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 15,
+    paddingHorizontal: 12,
+    textAlign: 'center',
+    marginTop: 10,
   },
   statsTitle: {
     fontSize: 18,
@@ -1281,42 +1287,140 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     textAlign: 'center',
   },
+  statsTitleWhite: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 15,
+    paddingHorizontal: 12,
+    textAlign: 'center',
+  },
   statsList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    gap: 10,
   },
-  statCard: {
-    height: 50,
-    width: '50%',
-    flexDirection: 'row',
+  statCardTouchable: {
+    flex: 1,
+    minWidth: '30%',
+  },
+  statCardGlass: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
-    paddingHorizontal: 8,
     justifyContent: 'center',
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(0,0,0,0.18)',
-  },
-  statCardRight: {
-    borderRightWidth: 0,
-  },
-  statCardBottom: {
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(0,0,0,0.18)',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2f3a3b',
-    marginRight: 8,
+    minHeight: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: 'hidden',
   },
   statLabel: {
     fontSize: 12,
-    color: '#2f3a3b',
-    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 6,
+    textAlign: 'center',
+    fontWeight: '500',
+    opacity: 0.85,
+    letterSpacing: 0.3,
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#a9c7cd',
+    textAlign: 'center',
+    textShadowColor: 'rgba(218, 165, 32, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  statsLoadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  statsLoadingText: {
+    fontSize: 14,
+    color: '#FFFFFF',
   },
   cleanupContainer: {
     paddingHorizontal: 20,
     paddingVertical: 20,
     marginBottom: 20,
+  },
+  debugContainer: {
+    paddingHorizontal: 0,
+    paddingVertical: 20,
+    marginBottom: 20,
+  },
+  debugSectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2f3a3b',
+    marginBottom: 15,
+    paddingHorizontal: 12,
+    textAlign: 'center',
+  },
+  debugSectionTitleWhite: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 15,
+    paddingHorizontal: 12,
+    textAlign: 'center',
+  },
+  debugButtonsGrid: {
+    paddingTop: 0,
+    marginBottom: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  debugButtonCardTouchable: {
+    flex: 1,
+    minWidth: '30%',
+  },
+  debugButtonCardGlass: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  debugButtonIconCard: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  debugButtonTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 4,
+    textAlign: 'center',
+    opacity: 0.95,
+  },
+  debugButtonDescriptionCard: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    lineHeight: 13,
+    textAlign: 'center',
+    opacity: 0.75,
   },
   cleanupSectionTitle: {
     fontSize: 16,

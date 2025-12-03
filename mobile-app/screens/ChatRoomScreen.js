@@ -277,24 +277,27 @@ export default function ChatRoomScreen({ onNavigate, onLogout = () => {}, chat, 
             </View>
           </View>
           
-          {/* Header mit Überschrift */}
+                    {/* Tagline unter dem Logo-Header */}
+          <View style={styles.taglineContainer}>
+            <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+          </View>
+          
+{/* Header mit Überschrift */}
           <View style={styles.header}>
             <View style={styles.headerCenter}>
-              <View style={styles.greetingContainer}>
-                <Text style={styles.greeting}>
-                  {(() => {
-                    // Bestimme den Namen des anderen Teilnehmers
-                    const currentUserId = currentUser?.uid;
-                    if (!chat?.participantNames || !currentUserId) return 'Chat';
-                    
-                    // Finde den anderen Teilnehmer
-                    const otherIndex = chat.participants?.findIndex(pid => pid !== currentUserId) ?? -1;
-                    const otherName = otherIndex >= 0 ? chat.participantNames[otherIndex] : chat.participantNames[1] || chat.participantNames[0];
-                    
-                    return otherName ? `Chat mit ${otherName}` : 'Chat';
-                  })()}
-                </Text>
-              </View>
+              <Text style={styles.greeting}>
+                {(() => {
+                  // Bestimme den Namen des anderen Teilnehmers
+                  const currentUserId = currentUser?.uid;
+                  if (!chat?.participantNames || !currentUserId) return 'Chat';
+                  
+                  // Finde den anderen Teilnehmer
+                  const otherIndex = chat.participants?.findIndex(pid => pid !== currentUserId) ?? -1;
+                  const otherName = otherIndex >= 0 ? chat.participantNames[otherIndex] : chat.participantNames[1] || chat.participantNames[0];
+                  
+                  return otherName ? `Chat mit ${otherName}` : 'Chat';
+                })()}
+              </Text>
             </View>
           </View>
           
@@ -485,7 +488,7 @@ export default function ChatRoomScreen({ onNavigate, onLogout = () => {}, chat, 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c',
   },
   contentContainer: {
     flex: 1,
@@ -499,8 +502,8 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
-    paddingBottom: 10,
-    borderBottomWidth: 0,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
+    
   },
   logoHeaderCenter: {
     flexDirection: 'row',
@@ -519,8 +522,8 @@ const styles = StyleSheet.create({
   logoImageWrapper: {
     width: 40,
     height: 40,
-    marginLeft: 12,
-    marginRight: 12,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -538,25 +541,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    paddingTop: 25,
-    paddingBottom: 25,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
     backgroundColor: '#2c2c2c',
     position: 'relative',
     marginTop: 0,
-    minHeight: 70,
-    borderTopWidth: 0,
-    borderBottomWidth: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   hamburgerContainer: {
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
@@ -587,30 +604,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
-  greetingContainer: {
-    backgroundColor: 'rgba(255, 215, 0, 0.2)',
-    borderRadius: 15,
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 215, 0, 0.5)',
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
   greeting: {
-    fontSize: 45,
-    fontWeight: '900',
-    color: '#FFD700',
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'Snell Roundhand' : 'serif',
-    fontStyle: 'italic',
-    letterSpacing: 1.5,
-    textShadowColor: 'rgba(255, 215, 0, 0.9)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
+    letterSpacing: 1,
     includeFontPadding: false,
   },
   chatTitle: {

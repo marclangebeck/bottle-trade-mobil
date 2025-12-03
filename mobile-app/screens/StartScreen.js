@@ -8,7 +8,6 @@ export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unr
   // Mock-Daten
   const user = {
     name: 'Max Mustermann',
-    btp: 1250,
     is_winery: true,
   };
 
@@ -52,12 +51,6 @@ export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unr
       
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
 
-      <View style={styles.statsCard}>
-        <Text style={styles.cardTitle}>Deine BTP</Text>
-        <Text style={styles.btpAmount}>{user.btp}</Text>
-        <Text style={styles.btpLabel}>Bottle Trade Points</Text>
-      </View>
-
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Neueste Weine</Text>
         {recentWeine.map((wein) => (
@@ -77,9 +70,6 @@ export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unr
           <TouchableOpacity style={styles.actionButton}>
             <Text style={styles.actionText}>🍷 Wein hinzufügen</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
-            <Text style={styles.actionText}>💰 BTP kaufen</Text>
-          </TouchableOpacity>
         </View>
       </View>
       </ScrollView>
@@ -95,11 +85,11 @@ export default function StartScreen({ onNavigate, onLogout, isAdmin = false, unr
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c',
   },
   scrollContainer: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c',
   },
   scrollContent: {
     flexGrow: 1,
@@ -121,7 +111,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
     borderBottomWidth: 0,
     // Glassmorphism Effekt
-    shadowColor: '#DAA520',
+    shadowColor: '#a9c7cd',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -131,16 +121,28 @@ const styles = StyleSheet.create({
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
   },
@@ -175,16 +177,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#FFFFFF',
     marginBottom: 10,
-  },
-  btpAmount: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  btpLabel: {
-    fontSize: 14,
-    color: '#F5DEB3',
-    marginTop: 5,
   },
   section: {
     margin: 20,

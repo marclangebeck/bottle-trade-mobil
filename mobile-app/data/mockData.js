@@ -167,48 +167,7 @@ export const unpublishWine = async (wineId) => {
   }
 };
 
-// Bottle-Trade-Points (BTP) Daten
-export const getBtpData = () => {
-  return {
-    currentBtp: 1250,
-    totalEarned: 2500,
-    totalSpent: 1250,
-    transactions: [
-      {
-        id: 1,
-        type: 'earn',
-        amount: 100,
-        description: 'Weinregal befüllt',
-        date: '2024-01-20',
-        icon: '🍷'
-      },
-      {
-        id: 2,
-        type: 'earn',
-        amount: 50,
-        description: 'Erfolgreicher Tausch',
-        date: '2024-01-18',
-        icon: '🤝'
-      },
-      {
-        id: 3,
-        type: 'spend',
-        amount: -200,
-        description: 'Premium-Abo',
-        date: '2024-01-15',
-        icon: '⭐'
-      },
-      {
-        id: 4,
-        type: 'earn',
-        amount: 25,
-        description: 'Profil vervollständigt',
-        date: '2024-01-10',
-        icon: '✅'
-      }
-    ]
-  };
-};
+// BTP-Daten entfernt - BTP wird nicht mehr verwendet
 
 // Community-Daten
 export const getCommunityData = () => {

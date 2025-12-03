@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TouchableOpacity, ImageBackground, Image, ScrollView, Platform, StatusBar as RNStatusBar, Animated, Dimensions, AppState, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Platform, StatusBar as RNStatusBar, Animated, Dimensions, AppState, Alert, Linking } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 // NavigationContainer und Tab Navigator werden nicht verwendet - App nutzt State-basiertes Routing
@@ -13,7 +13,7 @@ import { Asset } from 'expo-asset';
 import './config/firebase-web';
 
 // Test-Auth Service (simuliert Authentication)
-import { loginUser, registerUser, logoutUser, getCurrentUser, onAuthStateChange } from './services/testAuth';
+import { loginUser, registerUser, logoutUser, getCurrentUser, onAuthStateChange, restoreSession, updateCurrentUser } from './services/testAuth';
 
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './RegisterScreen';
@@ -23,12 +23,13 @@ import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import InfoScreen from './InfoScreen';
 import ShopScreen from './ShopScreen';
 import WeinregalBefuellenScreen from './WeinregalBefuellenScreen';
+import MeinWeinregalBefuellenKIScreen from './screens/MeinWeinregalBefuellenKIScreen';
 import MeinWeinregalScreen from './MeinWeinregalScreen';
 import DashboardScreen from './DashboardScreen';
 import WeinboerseScreen from './WeinboerseScreen';
 import CommunityScreen from './CommunityScreen';
+import UserScreen from './UserScreen';
 import WeineScreen from './screens/WeineScreen';
-import BtpScreen from './screens/BtpScreen';
 import ProfilScreen from './screens/ProfilScreen';
 import WeinregalEditScreen from './WeinregalEditScreen';
 import WeinDetailScreen from './WeinDetailScreen';
@@ -39,6 +40,8 @@ import AdminChatsScreen from './screens/AdminChatsScreen';
 import AdminTradesScreen from './screens/AdminTradesScreen';
 import AdminWinesScreen from './screens/AdminWinesScreen';
 import AdminUsersScreen from './screens/AdminUsersScreen';
+import AdminHintsScreen from './screens/AdminHintsScreen';
+import AdminDataManagementScreen from './screens/AdminDataManagementScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
 import SurveyAnswerScreen from './screens/SurveyAnswerScreen';
 import SurveyResultsScreen from './screens/SurveyResultsScreen';
@@ -50,7 +53,20 @@ import ChatRoomScreen from './screens/ChatRoomScreen';
 import HinweisScreen from './screens/HinweisScreen';
 import WunschlisteScreen from './screens/WunschlisteScreen';
 import InfoBoxScreen from './screens/InfoBoxScreen';
-import { createAdminTestChat, createTestAdminChat, createAdminTestMessages, TEST_USERS } from './services/testChatData';
+import ImpressumScreen from './screens/ImpressumScreen';
+import DatenschutzScreen from './screens/DatenschutzScreen';
+import KontaktScreen from './screens/KontaktScreen';
+import RundgangScreen from './screens/RundgangScreen';
+import SchwarzesBrettScreen from './screens/SchwarzesBrettScreen';
+import WeingueterScreen from './screens/WeingueterScreen';
+import StatistikScreen from './screens/StatistikScreen';
+import HeaderTestScreen from './screens/HeaderTestScreen';
+import WarenkorbScreen from './screens/WarenkorbScreen';
+import AdminShopScreen from './screens/AdminShopScreen';
+import AdminOrdersScreen from './screens/AdminOrdersScreen';
+import PaymentSuccessScreen from './screens/PaymentSuccessScreen';
+import PaymentCancelScreen from './screens/PaymentCancelScreen';
+import { createAdminTestChat, createTestAdminChat, createAdminTestMessages } from './services/testChatData';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Footer from './Footer';
 import BottomNavigation from './components/BottomNavigation';
@@ -83,12 +99,41 @@ import {
   deleteNotification as fsDeleteNotification,
   deleteNotificationsForHint as fsDeleteNotificationsForHint,
   deleteNotificationsForChat as fsDeleteNotificationsForChat,
-  deleteNotificationsForTradeRequest as fsDeleteNotificationsForTradeRequest
+  deleteNotificationsForTradeRequest as fsDeleteNotificationsForTradeRequest,
+  getWishesForUser as fsGetWishesForUser,
+  checkAllWishMatches as fsCheckAllWishMatches,
+  // Admin-Nachrichten Funktionen
+  createSurvey as fsCreateSurvey,
+  getAllSurveys as fsGetAllSurveys,
+  updateSurveyStatus as fsUpdateSurveyStatus,
+  createNotificationsForSurvey as fsCreateNotificationsForSurvey,
+  createNewsletter as fsCreateNewsletter,
+  getAllNewsletters as fsGetAllNewsletters,
+  updateNewsletterStatus as fsUpdateNewsletterStatus,
+  createNotificationsForNewsletter as fsCreateNotificationsForNewsletter,
+  createSystemMessage as fsCreateSystemMessage,
+  getAllSystemMessages as fsGetAllSystemMessages,
+  updateSystemMessageStatus as fsUpdateSystemMessageStatus,
+  createNotificationsForSystemMessage as fsCreateNotificationsForSystemMessage,
+  submitSurveyAnswer as fsSubmitSurveyAnswer,
+  hasUserAnsweredSurvey as fsHasUserAnsweredSurvey,
+  getSurvey as fsGetSurvey,
+  getSurveyAnswers as fsGetSurveyAnswers,
+  getNewsletter as fsGetNewsletter,
+  getSystemMessage as fsGetSystemMessage,
+  subscribeCart as fsSubscribeCart,
+  getCart as fsGetCart,
+  updateOrderStatus as fsUpdateOrderStatus,
+  getOrder as fsGetOrder
 } from './services/database-web';
 import { unpublishWine as unpublishWineData } from './data/mockData';
-import { collection, getDocs, query, where, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where, updateDoc, doc, serverTimestamp, getDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db } from './config/firebase-web';
 import { logNotificationEvent } from './services/notificationLogger';
+
+// Tour-Komponenten und -Daten
+import TourOverlay from './components/TourOverlay';
+import { tourSteps } from './data/tourSteps';
 
 // MainTabs Komponente entfernt - wird nicht verwendet
 // App nutzt State-basiertes Routing über currentScreen statt Tab Navigator
@@ -114,6 +159,16 @@ export default function App() {
   const [activeChatMessages, setActiveChatMessages] = useState({}); // Nachrichten für aktuell geöffneten Chat
   const messageSubscriptionsRef = useRef({}); // Track aktive Nachrichten-Subscriptions
   const pendingNotificationDeletionsRef = useRef(new Set()); // Track Notifications, die gerade gelöscht werden
+  const [wishlistMatchCount, setWishlistMatchCount] = useState(0); // Anzahl der Wünsche mit Matches
+  const [cartItemCount, setCartItemCount] = useState(0); // Anzahl der Artikel im Warenkorb
+  const userSubscriptionRef = useRef(null); // Track User-Subscription für Cleanup
+  const cartSubscriptionRef = useRef(null); // Track Warenkorb-Subscription für Cleanup
+  
+  // Tour-State (isoliert, beeinflusst keine bestehende Funktionalität)
+  const [tourActive, setTourActive] = useState(false);
+  const [tourCurrentStepIndex, setTourCurrentStepIndex] = useState(0);
+  const [tourElementPositions, setTourElementPositions] = useState({}); // { elementId: { x, y, width, height } }
+  const [tourCompleted, setTourCompleted] = useState(false); // Tour-Status aus AsyncStorage
   
   // Screen dimensions für volle Breite und Höhe
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -215,6 +270,69 @@ export default function App() {
   };
   
 
+  // Berechnet die Anzahl der Wünsche mit Matches (muss vor Auto-Login definiert sein)
+  const refreshWishlistMatchCount = async () => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !currentUser.uid) {
+        setWishlistMatchCount(0);
+        return;
+      }
+
+      const wishes = await fsGetWishesForUser(currentUser.uid);
+      const matchCount = wishes.filter(wish => wish.hasMatch === true).length;
+      setWishlistMatchCount(matchCount);
+      console.log(`✅ Wunschliste Match-Count aktualisiert: ${matchCount} von ${wishes.length} Wünschen`);
+    } catch (error) {
+      console.error('❌ Fehler beim Berechnen der Wunschliste-Matches:', error);
+      setWishlistMatchCount(0);
+    }
+  };
+
+  // Auto-Login beim App-Start (Session wiederherstellen)
+  useEffect(() => {
+    const attemptAutoLogin = async () => {
+      try {
+        console.log('🔄 Prüfe gespeicherte Session für Auto-Login...');
+        const restoredUser = await restoreSession();
+        
+        if (restoredUser) {
+          console.log('✅ Auto-Login erfolgreich für:', restoredUser.email);
+          // User-Info setzen
+          const currentUser = getCurrentUser();
+          if (currentUser) {
+            const displayName = currentUser.username || `${currentUser.firstName} ${currentUser.lastName}`;
+            setUserName(displayName);
+            setUserEmail(currentUser.email || '');
+            setUser(currentUser);
+            
+            // Admin-Status prüfen
+            if (currentUser.isAdmin === true) {
+              setIsAdmin(true);
+              console.log('✅ Admin-Rechte erkannt');
+            } else {
+              setIsAdmin(false);
+            }
+            
+            // Login-Status setzen und zum Dashboard navigieren
+            setIsLoggedIn(true);
+            setCurrentScreen('home');
+            
+            // Wunschliste-Matches prüfen
+            await refreshWishlistMatchCount();
+          }
+        } else {
+          console.log('ℹ️ Keine gespeicherte Session gefunden, zeige Welcome-Screen');
+        }
+      } catch (error) {
+        console.error('❌ Fehler beim Auto-Login:', error);
+        // Bei Fehler einfach Welcome-Screen zeigen
+      }
+    };
+    
+    attemptAutoLogin();
+  }, []); // Nur einmal beim App-Start ausführen
+
   // Logo vorab laden für schnelleres Laden auf allen Screens
   useEffect(() => {
     // Logo vorab laden
@@ -307,6 +425,296 @@ export default function App() {
       if (intervalId) clearInterval(intervalId);
     };
   }, []);
+
+  // ============================================
+  // PayPal: Prüfe Bestellungen beim App-Wechsel (Fallback)
+  // Grund: Falls Deep Link Handler nicht aufgerufen wird, prüfe Bestellungen beim Zurückkommen
+  // ============================================
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    
+    const currentUser = getCurrentUser();
+    if (!currentUser || !currentUser.uid) return;
+    
+    let appState = AppState.currentState;
+    
+    const handleAppStateChange = async (nextAppState) => {
+      // Wenn App wieder aktiv wird (z.B. nach PayPal-Zahlung)
+      if (appState.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('🔄 App wieder aktiv, prüfe Bestellungen auf Updates...');
+        
+        try {
+          const { getUserOrders, updateOrderStatus, getOrder } = await import('./services/database-web');
+          const userOrders = await getUserOrders(currentUser.uid);
+          
+          // Prüfe alle "pending" Bestellungen, die in den letzten 10 Minuten erstellt wurden
+          const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+          
+          for (const order of userOrders) {
+            if (order.status === 'pending') {
+              const orderTime = order.createdAt?.toMillis?.() || order.createdAt?.seconds * 1000 || 0;
+              
+              // Nur Bestellungen prüfen, die in den letzten 10 Minuten erstellt wurden
+              if (orderTime > tenMinutesAgo) {
+                console.log(`🔄 Prüfe Bestellung ${order.id.substring(0, 8)} auf PayPal-Zahlung...`);
+                
+                // WICHTIG: Wenn User von PayPal zurückkommt und Bestellung noch "pending" ist,
+                // können wir davon ausgehen, dass die Zahlung erfolgreich war
+                // (außer bei Cancel, aber das wird separat behandelt)
+                // 
+                // Versuche PayPal Payment Status zu prüfen (nur wenn paymentId vorhanden)
+                let shouldUpdate = false;
+                
+                if (order.paymentId) {
+                  // Wenn paymentId vorhanden, versuche PayPal-Status zu prüfen
+                  try {
+                    const { getPayPalPaymentStatus } = await import('./services/paypalService');
+                    const paypalStatus = await getPayPalPaymentStatus(order.paymentId);
+                    
+                    // Wenn PayPal sagt, dass Zahlung erfolgreich war, aktualisiere Bestellung
+                    if (paypalStatus.status === 'COMPLETED' || paypalStatus.status === 'APPROVED') {
+                      console.log(`✅ PayPal-Zahlung erfolgreich für Bestellung ${order.id.substring(0, 8)} (PayPal-Status: ${paypalStatus.status})`);
+                      shouldUpdate = true;
+                    }
+                  } catch (paypalError) {
+                    // PayPal API nicht verfügbar oder Fehler - verwende Fallback
+                    console.log(`⚠️ PayPal-Status für Bestellung ${order.id.substring(0, 8)} konnte nicht geprüft werden:`, paypalError.message);
+                    console.log(`💡 Verwende Fallback: Setze Bestellung auf "paid" (User ist von PayPal zurückgekommen)`);
+                    shouldUpdate = true; // Fallback: Wenn User zurückkommt, ist Zahlung wahrscheinlich erfolgreich
+                  }
+                } else {
+                  // Keine paymentId vorhanden - verwende Fallback
+                  console.log(`💡 Keine paymentId in Bestellung ${order.id.substring(0, 8)}, verwende Fallback`);
+                  console.log(`💡 Setze Bestellung auf "paid" (User ist von PayPal zurückgekommen)`);
+                  shouldUpdate = true;
+                }
+                
+                if (shouldUpdate) {
+                  try {
+                    await updateOrderStatus(order.id, 'paid', order.paymentId || undefined);
+                    console.log(`✅ Bestellung ${order.id.substring(0, 8)} auf "paid" aktualisiert (AppState-Fallback)`);
+                    
+                    // Rechnung generieren und per E-Mail versenden (im Hintergrund)
+                    try {
+                      const { generateInvoice } = await import('./services/invoiceService');
+                      generateInvoice(order.id).catch(error => {
+                        console.warn(`⚠️ Rechnung für Bestellung ${order.id.substring(0, 8)} konnte nicht generiert werden:`, error.message);
+                      });
+                    } catch (importError) {
+                      console.warn('⚠️ Rechnungs-Service konnte nicht geladen werden:', importError.message);
+                    }
+                  } catch (updateError) {
+                    console.error(`❌ Fehler beim Aktualisieren der Bestellung ${order.id.substring(0, 8)}:`, updateError);
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('❌ Fehler beim Prüfen der Bestellungen (AppState-Fallback):', error);
+        }
+      }
+      
+      appState = nextAppState;
+    };
+    
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      subscription?.remove();
+    };
+  }, [isLoggedIn]);
+
+  // ============================================
+  // PayPal Deep Link Handler
+  // Grund: Rückkehr von PayPal-Zahlung verarbeiten
+  // Unterstützt: Deep Links (bottletrade://) und Universal Links (https://bottle-trade.de)
+  // ============================================
+  useEffect(() => {
+    // Handler für Deep Links und Universal Links
+    const handleDeepLink = async (url) => {
+      if (!url) return;
+
+      console.log('🔗 Deep Link/Universal Link empfangen:', url);
+
+      try {
+        // Parse URL - unterstützt sowohl Deep Links als auch HTTPS URLs
+        let urlObj;
+        let params;
+        
+        try {
+          // Versuche URL zu parsen (funktioniert für Deep Links und HTTPS)
+          urlObj = new URL(url);
+          params = new URLSearchParams(urlObj.search);
+        } catch (parseError) {
+          // Fallback: Manuelles Parsen für Deep Links ohne Protokoll
+          if (url.startsWith('bottletrade://')) {
+            const urlWithoutScheme = url.replace('bottletrade://', '');
+            const [path, query] = urlWithoutScheme.split('?');
+            params = new URLSearchParams(query || '');
+          } else {
+            console.error('❌ URL konnte nicht geparst werden:', url);
+            return;
+          }
+        }
+
+        const path = urlObj?.pathname || url.split('?')[0] || '';
+        const isPaymentSuccess = url.includes('payment-success') || url.includes('payment_success') || path.includes('payment-success');
+        const isPaymentCancel = url.includes('payment-cancel') || url.includes('payment_cancel') || path.includes('payment-cancel');
+
+        // Payment Success
+        if (isPaymentSuccess) {
+          // WICHTIG: Order-ID sollte aus der Return-URL kommen, die wir an PayPal übergeben haben
+          // PayPal gibt die Order-ID in verschiedenen Parametern zurück
+          // Priorität: orderId (unser Parameter) > token (PayPal Token) > order_id (PayPal Order ID) > PayerID (nur als Fallback)
+          const orderId = params.get('orderId') || params.get('token') || params.get('order_id') || params.get('PayerID');
+          const paymentId = params.get('paymentId') || params.get('transaction_id') || params.get('txn_id') || params.get('token');
+          const payerId = params.get('PayerID') || params.get('payer_id');
+
+          console.log('✅ PayPal-Zahlung erfolgreich:', { orderId, paymentId, payerId, url });
+          console.log('🔍 Alle URL-Parameter:', Array.from(params.entries()));
+
+          if (orderId) {
+            try {
+              // WICHTIG: PayPal gibt möglicherweise die PayPal Order ID (token) zurück, nicht unsere Firestore Order ID
+              // Versuche zuerst, ob die Order-ID eine Firestore Order ID ist
+              const { getOrder } = await import('./services/database-web');
+              let firestoreOrderId = orderId;
+              let orderExists = false;
+              
+              try {
+                const order = await getOrder(orderId);
+                orderExists = true;
+                firestoreOrderId = order.id;
+                console.log('✅ Bestellung gefunden:', order.id, 'Status:', order.status);
+              } catch (orderError) {
+                console.warn('⚠️ Bestellung nicht gefunden mit Order-ID:', orderId);
+                console.warn('⚠️ Versuche, Order-ID über PayPal API zu finden...');
+                
+                // Falls Order-ID nicht gefunden wurde, könnte es die PayPal Order ID sein
+                // Versuche, die reference_id über PayPal API zu finden
+                try {
+                  const { getPayPalPaymentStatus } = await import('./services/paypalService');
+                  const paymentStatus = await getPayPalPaymentStatus(orderId);
+                  
+                  // PayPal gibt reference_id in purchase_units zurück
+                  if (paymentStatus.purchaseUnits && paymentStatus.purchaseUnits.length > 0) {
+                    const referenceId = paymentStatus.purchaseUnits[0].reference_id;
+                    if (referenceId) {
+                      console.log('✅ Reference ID von PayPal gefunden:', referenceId);
+                      firestoreOrderId = referenceId;
+                      
+                      // Prüfe ob diese Order-ID existiert
+                      try {
+                        const order = await getOrder(referenceId);
+                        orderExists = true;
+                        console.log('✅ Bestellung mit Reference ID gefunden:', order.id, 'Status:', order.status);
+                      } catch (refError) {
+                        console.error('❌ Bestellung mit Reference ID nicht gefunden:', referenceId);
+                      }
+                    }
+                  }
+                } catch (paypalError) {
+                  console.warn('⚠️ PayPal API-Abfrage fehlgeschlagen:', paypalError.message);
+                }
+              }
+
+              if (!orderExists) {
+                console.warn('⚠️ Bestellung nicht gefunden, versuche trotzdem zu aktualisieren...');
+                // Versuche trotzdem zu aktualisieren (vielleicht existiert sie doch)
+              }
+
+              // Prüfe Payment-Status bei PayPal (falls API-Credentials vorhanden)
+              let finalPaymentId = paymentId || orderId; // Verwende orderId als Fallback
+              try {
+                const { getPayPalPaymentStatus } = await import('./services/paypalService');
+                const paymentStatus = await getPayPalPaymentStatus(orderId);
+                if (paymentStatus.paymentId) {
+                  finalPaymentId = paymentStatus.paymentId;
+                }
+                console.log('✅ PayPal Payment Status:', paymentStatus.status);
+              } catch (statusError) {
+                console.warn('⚠️ Payment-Status konnte nicht geprüft werden (API-Credentials fehlen?):', statusError.message);
+                // Weiter mit manueller Status-Update
+              }
+
+              // Aktualisiere Bestellstatus mit der Firestore Order ID
+              await fsUpdateOrderStatus(firestoreOrderId, 'paid', finalPaymentId || undefined);
+              console.log('✅ Bestellstatus auf "paid" aktualisiert:', firestoreOrderId);
+              
+              // WICHTIG: Prüfe ob Bestellung wirklich aktualisiert wurde
+              try {
+                const updatedOrder = await getOrder(firestoreOrderId);
+                console.log('✅ Bestellung nach Update geprüft:', updatedOrder.id, 'Status:', updatedOrder.status);
+                if (updatedOrder.status !== 'paid') {
+                  console.error('❌ WARNUNG: Bestellstatus wurde nicht korrekt aktualisiert! Erwartet: paid, Aktuell:', updatedOrder.status);
+                }
+              } catch (verifyError) {
+                console.error('❌ Fehler beim Prüfen der aktualisierten Bestellung:', verifyError);
+              }
+
+              // Rechnung generieren und per E-Mail versenden (im Hintergrund, blockiert nicht)
+              try {
+                const { generateInvoice } = await import('./services/invoiceService');
+                generateInvoice(firestoreOrderId).catch(error => {
+                  console.warn('⚠️ Rechnung konnte nicht automatisch generiert werden:', error.message);
+                  // Nicht kritisch - Bestellung ist bereits als "paid" markiert
+                });
+              } catch (importError) {
+                console.warn('⚠️ Rechnungs-Service konnte nicht geladen werden:', importError.message);
+              }
+
+              // Navigiere zu Success-Screen
+              setCurrentScreen('payment-success');
+              setRoute({ params: { orderId: firestoreOrderId, paymentId: finalPaymentId } });
+            } catch (error) {
+              console.error('❌ Fehler beim Aktualisieren der Bestellung:', error);
+              console.error('❌ Fehler-Details:', error.message, error.stack);
+              Alert.alert('Fehler', `Bestellung konnte nicht aktualisiert werden: ${error.message}. Bitte kontaktieren Sie den Support mit der Order-ID: ${orderId}`);
+            }
+          } else {
+            console.warn('⚠️ Keine Order-ID in Deep Link gefunden');
+            console.warn('⚠️ URL war:', url);
+            console.warn('⚠️ Alle Parameter:', Array.from(params.entries()));
+            Alert.alert('Hinweis', 'Zahlung erfolgreich, aber Bestellung konnte nicht zugeordnet werden. Bitte kontaktieren Sie den Support.');
+          }
+        }
+        // Payment Cancel
+        else if (isPaymentCancel) {
+          const orderId = params.get('orderId') || params.get('token') || params.get('order_id');
+
+          console.log('❌ PayPal-Zahlung abgebrochen:', { orderId, url });
+
+          // Navigiere zu Cancel-Screen
+          setCurrentScreen('payment-cancel');
+          setRoute({ params: { orderId } });
+        }
+      } catch (error) {
+        console.error('❌ Fehler beim Verarbeiten des Deep Links:', error);
+        console.error('❌ URL war:', url);
+      }
+    };
+
+    // Initial URL (wenn App durch Deep Link oder Universal Link geöffnet wurde)
+    Linking.getInitialURL().then(url => {
+      if (url) {
+        console.log('🔗 Initial URL beim App-Start:', url);
+        handleDeepLink(url);
+      }
+    }).catch(err => {
+      console.error('❌ Fehler beim Abrufen der initialen URL:', err);
+    });
+
+    // Deep Link Events (wenn App bereits läuft)
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      console.log('🔗 Deep Link Event empfangen:', url);
+      handleDeepLink(url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isLoggedIn]); // Re-run if login status changes
 
   // ============================================
   // PHASE3: NEU PROGRAMMIERT
@@ -786,14 +1194,215 @@ export default function App() {
       }).catch(() => {});
     });
 
+    // Echtzeit-Subscription für User-Daten
+    if (currentUserId) {
+      // Beende vorherige Subscription, falls vorhanden
+      if (userSubscriptionRef.current) {
+        console.log('🔌 Beende vorherige User-Subscription');
+        userSubscriptionRef.current();
+        userSubscriptionRef.current = null;
+      }
+      
+      try {
+        // Finde zuerst das User-Dokument über uid
+        const userQuery = query(collection(db, 'users'), where('uid', '==', currentUserId));
+        getDocs(userQuery).then(snapshot => {
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            const userDocRef = userDoc.ref;
+            
+            console.log('🔄 Richte User-Subscription ein für:', currentUserId);
+            
+            // Subscribe zu Änderungen am User-Dokument
+            const unsubscribe = onSnapshot(userDocRef, (docSnapshot) => {
+              if (docSnapshot.exists()) {
+                const userData = docSnapshot.data();
+                console.log('📡 User-Daten-Update erhalten');
+                
+                // Aktualisiere User-State mit neuen Daten
+                setUser(prevUser => {
+                  const updatedUser = {
+                    ...prevUser,
+                    ...userData
+                  };
+                  console.log('✅ User-State aktualisiert');
+                  return updatedUser;
+                });
+                
+                // Aktualisiere auch getCurrentUser() in testAuth
+                const currentUser = getCurrentUser();
+                if (currentUser) {
+                  updateCurrentUser({
+                    ...currentUser,
+                    ...userData
+                  });
+                }
+              }
+            }, (error) => {
+              console.error('❌ Fehler bei User-Subscription:', error);
+            });
+            
+            // Speichere unsubscribe-Funktion in Ref
+            userSubscriptionRef.current = unsubscribe;
+            console.log('✅ User-Subscription eingerichtet');
+          } else {
+            console.warn('⚠️ User-Dokument nicht gefunden für Subscription');
+          }
+        }).catch(error => {
+          console.error('❌ Fehler beim Finden des User-Dokuments:', error);
+        });
+      } catch (error) {
+        console.error('❌ Fehler beim Einrichten der User-Subscription:', error);
+      }
+    }
+
+    // Warenkorb-Subscription
+    if (currentUserId && isLoggedIn) {
+      // Beende vorherige Subscription, falls vorhanden
+      if (cartSubscriptionRef.current) {
+        cartSubscriptionRef.current();
+        cartSubscriptionRef.current = null;
+      }
+      
+      try {
+        const unsubscribe = fsSubscribeCart(currentUserId, (items) => {
+          const totalQuantity = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+          setCartItemCount(totalQuantity);
+        });
+        cartSubscriptionRef.current = unsubscribe;
+        console.log('✅ Warenkorb-Subscription eingerichtet');
+      } catch (error) {
+        console.error('❌ Fehler beim Einrichten der Warenkorb-Subscription:', error);
+      }
+    } else {
+      setCartItemCount(0);
+    }
+
     return () => {
       console.log('🔌 PHASE3: Unsubscribing from Firestore');
       unsubscribeChats();
       unsubscribeNotifications();
+      if (userSubscriptionRef.current) {
+        userSubscriptionRef.current();
+        userSubscriptionRef.current = null;
+        console.log('🔌 User-Subscription beendet');
+      }
+      if (cartSubscriptionRef.current) {
+        cartSubscriptionRef.current();
+        cartSubscriptionRef.current = null;
+        console.log('🔌 Warenkorb-Subscription beendet');
+      }
+      // Cleanup: Beende alle Message-Subscriptions
+      Object.keys(messageSubscriptionsRef.current).forEach(chatId => {
+        try {
+          if (messageSubscriptionsRef.current[chatId]) {
+            messageSubscriptionsRef.current[chatId]();
+            console.log(`🔌 Message-Subscription für Chat ${chatId} beendet`);
+          }
+        } catch (err) {
+          console.error(`❌ Fehler beim Beenden der Message-Subscription für Chat ${chatId}:`, err);
+        }
+      });
+      messageSubscriptionsRef.current = {};
+      console.log('🔌 Alle Message-Subscriptions beendet');
     };
   }, [isLoggedIn]);
   // ============================================
   // PHASE3 ENDE
+  // ============================================
+
+  // ============================================
+  // ADMIN NACHRICHTEN: Firestore-Subscriptions
+  // ============================================
+  useEffect(() => {
+    if (!isLoggedIn || !isAdmin) return;
+
+    console.log('🔄 Setting up Admin-Nachrichten Subscriptions...');
+
+    // Subscribe zu Surveys
+    const unsubscribeSurveys = onSnapshot(
+      collection(db, 'surveys'),
+      (snapshot) => {
+        const surveysData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        // Clientseitig sortieren (falls orderBy fehlt)
+        surveysData.sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
+          return bTime - aTime;
+        });
+        setSurveys(surveysData);
+        console.log(`✅ ${surveysData.length} Surveys geladen`);
+      },
+      (error) => {
+        console.error('❌ Fehler bei Survey-Subscription:', error);
+      }
+    );
+
+    // Subscribe zu Newsletters
+    const unsubscribeNewsletters = onSnapshot(
+      collection(db, 'newsletters'),
+      (snapshot) => {
+        const newslettersData = snapshot.docs
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }))
+          // Filtere gelöschte Newsletter heraus
+          .filter(newsletter => newsletter.status !== 'deleted');
+        
+        // Clientseitig sortieren (falls orderBy fehlt)
+        newslettersData.sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
+          return bTime - aTime;
+        });
+        setNewsletters(newslettersData);
+        console.log(`✅ ${newslettersData.length} Newsletters geladen (gelöschte herausgefiltert)`);
+      },
+      (error) => {
+        console.error('❌ Fehler bei Newsletter-Subscription:', error);
+      }
+    );
+
+    // Subscribe zu SystemMessages
+    const unsubscribeSystemMessages = onSnapshot(
+      collection(db, 'systemMessages'),
+      (snapshot) => {
+        const systemMessagesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        // Clientseitig sortieren (falls orderBy fehlt)
+        systemMessagesData.sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
+          return bTime - aTime;
+        });
+        setSystemMessages(systemMessagesData);
+        console.log(`✅ ${systemMessagesData.length} System-Ankündigungen geladen`);
+      },
+      (error) => {
+        console.error('❌ Fehler bei SystemMessage-Subscription:', error);
+      }
+    );
+
+    // Initial Load
+    fsGetAllSurveys().then(data => setSurveys(data)).catch(err => console.error('❌ Fehler beim Laden von Surveys:', err));
+    fsGetAllNewsletters().then(data => setNewsletters(data)).catch(err => console.error('❌ Fehler beim Laden von Newslettern:', err));
+    fsGetAllSystemMessages().then(data => setSystemMessages(data)).catch(err => console.error('❌ Fehler beim Laden von System-Ankündigungen:', err));
+
+    return () => {
+      console.log('🔌 Unsubscribing from Admin-Nachrichten');
+      unsubscribeSurveys();
+      unsubscribeNewsletters();
+      unsubscribeSystemMessages();
+    };
+  }, [isLoggedIn, isAdmin]);
+  // ============================================
+  // ADMIN NACHRICHTEN ENDE
   // ============================================
   
   useEffect(() => {
@@ -1107,7 +1716,8 @@ useEffect(() => {
   //   return () => unsubscribe();
   // }, []);
 
-  const handleLogin = async () => {
+
+  const handleLogin = useCallback(async () => {
     // Temporärer Login für Test
     setIsLoggedIn(true);
     setCurrentScreen('home');
@@ -1130,10 +1740,14 @@ useEffect(() => {
           setIsAdmin(false);
           console.log('ℹ️ Standard-User erkannt:', currentUser.email, '(', displayName, ')');
         }
+
+        // Wunschliste-Matches prüfen
+        await refreshWishlistMatchCount();
       } else {
         setIsAdmin(false);
         setUserName('');
         setUserEmail('');
+        setWishlistMatchCount(0);
         console.log('ℹ️ Kein User gefunden');
       }
     } catch (error) {
@@ -1141,12 +1755,13 @@ useEffect(() => {
       setIsAdmin(false);
       setUserName('');
       setUserEmail('');
+      setWishlistMatchCount(0);
     }
     
     console.log('✅ Test login successful - using existing test user');
-  };
+  }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       // Echte Logout-Funktion verwenden
       await logoutUser();
@@ -1155,6 +1770,7 @@ useEffect(() => {
       setUserName('');
       setUserEmail('');
       setUser(null);
+      setWishlistMatchCount(0);
     setCurrentScreen('welcome');
       console.log('✅ User logged out - Admin-Status und User-Info zurückgesetzt');
     } catch (error) {
@@ -1165,19 +1781,20 @@ useEffect(() => {
       setUserName('');
       setUserEmail('');
       setUser(null);
+      setWishlistMatchCount(0);
     setCurrentScreen('welcome');
     }
-  };
+  }, []);
 
-  const handleShowLogin = () => {
+  const handleShowLogin = useCallback(() => {
     setCurrentScreen('login');
-  };
+  }, []);
 
-  const handleShowRegister = () => {
+  const handleShowRegister = useCallback(() => {
     setCurrentScreen('register');
-  };
+  }, []);
 
-  const handleNavigate = (screen, params = null) => {
+  const handleNavigate = useCallback((screen, params = null) => {
     console.log(`🔄 App.js: handleNavigate aufgerufen - screen: "${screen}", params:`, params);
     console.log(`🔄 App.js: Aktueller Screen: "${currentScreen}", wird geändert zu: "${screen}"`);
     
@@ -1348,11 +1965,144 @@ useEffect(() => {
         }).catch(error => {
           console.error('❌ PHASE3: Fehler beim Laden der Nachrichten:', error);
         });
-      }).catch(error => {
-        console.error('❌ PHASE3: Fehler beim Prüfen des Chats:', error);
+        }).catch(error => {
+          console.error('❌ PHASE3: Fehler beim Prüfen des Chats:', error);
       });
     }
+  }, [currentScreen, route]);
+
+  // Tour-Funktionen (isoliert, beeinflusst keine bestehende Funktionalität)
+  // =========================================================================
+  
+  /**
+   * Startet den digitalen Rundgang
+   * @param {boolean} forceStart - Wenn true, startet Tour auch wenn bereits abgeschlossen
+   */
+  const handleStartTour = (forceStart = false) => {
+    console.log('🎯 Tour gestartet', forceStart ? '(erzwungen)' : '');
+    
+    // Navigiere zum Dashboard, wenn nicht bereits dort
+    if (currentScreen !== 'dashboard' && currentScreen !== 'home') {
+      handleNavigate('dashboard');
+      // Warte kurz, damit Dashboard gerendert ist, bevor Tour startet
+      setTimeout(() => {
+        setTourActive(true);
+        setTourCurrentStepIndex(0);
+        setTourElementPositions({}); // Wird später durch measureElement gefüllt
+      }, 500);
+    } else {
+      // Bereits auf Dashboard, starte Tour sofort
+      setTourActive(true);
+      setTourCurrentStepIndex(0);
+      setTourElementPositions({}); // Wird später durch measureElement gefüllt
+    }
   };
+
+  /**
+   * Beendet den digitalen Rundgang
+   * @param {boolean} markAsCompleted - Wenn true, wird Tour als abgeschlossen markiert
+   */
+  const handleEndTour = async (markAsCompleted = false) => {
+    console.log('🎯 Tour beendet', markAsCompleted ? '(als abgeschlossen markiert)' : '');
+    setTourActive(false);
+    setTourCurrentStepIndex(0);
+    setTourElementPositions({});
+    
+    // Tour als abgeschlossen markieren und in AsyncStorage speichern
+    if (markAsCompleted) {
+      try {
+        await AsyncStorage.setItem('bottle-trade-tour-completed', 'true');
+        setTourCompleted(true);
+        console.log('✅ Tour-Status gespeichert: Tour abgeschlossen');
+      } catch (error) {
+        console.error('❌ Fehler beim Speichern des Tour-Status:', error);
+      }
+    }
+  };
+
+  /**
+   * Nächster Step im Rundgang
+   */
+  const handleTourNext = () => {
+    const currentStep = tourSteps[tourCurrentStepIndex];
+    if (!currentStep) {
+      handleEndTour();
+      return;
+    }
+
+    const nextIndex = tourCurrentStepIndex + 1;
+    
+    // Wenn letzter Step erreicht
+    if (nextIndex >= tourSteps.length) {
+      handleEndTour(true); // Tour als abgeschlossen markieren
+      return;
+    }
+
+    const nextStep = tourSteps[nextIndex];
+    
+    // Prüfe, ob Screen-Wechsel nötig ist
+    if (nextStep.screen !== currentStep.screen) {
+      // Navigiere zum neuen Screen
+      handleNavigate(nextStep.screen);
+    }
+    
+    // Setze nächsten Step
+    setTourCurrentStepIndex(nextIndex);
+  };
+
+  /**
+   * Vorheriger Step im Rundgang
+   */
+  const handleTourBack = () => {
+    if (tourCurrentStepIndex <= 0) {
+      return; // Bereits beim ersten Step
+    }
+
+    const prevIndex = tourCurrentStepIndex - 1;
+    const prevStep = tourSteps[prevIndex];
+    const currentStep = tourSteps[tourCurrentStepIndex];
+    
+    // Prüfe, ob Screen-Wechsel nötig ist
+    if (prevStep.screen !== currentStep.screen) {
+      // Navigiere zum vorherigen Screen
+      handleNavigate(prevStep.screen);
+    }
+    
+    // Setze vorherigen Step
+    setTourCurrentStepIndex(prevIndex);
+  };
+
+  /**
+   * Überspringt den Rundgang
+   */
+  const handleTourSkip = () => {
+    handleEndTour();
+  };
+
+  /**
+   * Aktualisiert die Positionen von UI-Elementen für den Rundgang
+   * Wird von Screens aufgerufen, um Element-Positionen zu registrieren
+   */
+  const updateTourElementPosition = React.useCallback((elementId, position) => {
+    if (!elementId || !position) return;
+    
+    setTourElementPositions(prev => {
+      // Nur updaten, wenn sich die Position tatsächlich geändert hat
+      const currentPosition = prev[elementId];
+      if (currentPosition && 
+          currentPosition.x === position.x && 
+          currentPosition.y === position.y &&
+          currentPosition.width === position.width &&
+          currentPosition.height === position.height) {
+        return prev; // Keine Änderung, kein Re-Render
+      }
+      
+      return {
+        ...prev,
+        [elementId]: position,
+      };
+    });
+  }, []); // Leere Dependencies, da setTourElementPositions stabil ist
 
   // Wiederverwendbare Funktion: Notification-Erstellung für neue Chat-Nachrichten
   // ============================================
@@ -2256,7 +3006,10 @@ useEffect(() => {
               fromUserId: currentUserId, // Derjenige, der den Chat verlassen hat
               fromUserName: currentUserName,
               toUserId: otherParticipantId, // Derjenige, der den Chat nicht verlassen hat (bekommt die Notification)
-              toUserName: otherParticipantName
+              toUserName: otherParticipantName,
+              isRead: false, // WICHTIG: Explizit auf false setzen, damit Badge angezeigt wird
+              isArchived: false,
+              isCompleted: false
             };
             
             await fsCreateNotification(otherParticipantId, notificationData);
@@ -2373,36 +3126,39 @@ useEffect(() => {
   // ============================================
 
   // Funktionen für Umfragen und Benachrichtigungen
-  const createSurvey = (surveyData) => {
-    console.log('🔄 App.js: Erstelle Umfrage...', surveyData);
-    const newSurvey = {
-      id: Date.now(), // Einfache ID-Generierung
-      ...surveyData,
-      responses: 0,
-      status: 'active',
-      createdAt: new Date().toLocaleDateString('de-DE')
-    };
-    
-    console.log('✅ App.js: Umfrage erstellt:', newSurvey);
-    setSurveys(prev => [...prev, newSurvey]);
-    
-    // Benachrichtigung für alle Benutzer erstellen
-    const newNotification = {
-      id: Date.now() + 1,
-      type: 'system',
-      title: 'Neue Umfrage verfügbar',
-      message: `"${surveyData.title}" - Teilnahme belohnt mit ${surveyData.btpReward} BTP`,
-      timestamp: 'gerade eben',
-      isRead: false,
-      priority: 'medium'
-    };
-    
-    console.log('📢 App.js: Benachrichtigung erstellt:', newNotification);
-    setNotifications(prev => [newNotification, ...prev]);
-    // WICHTIG: setUnreadNotifications entfernt - wird automatisch über refreshNotificationBadges aktualisiert
-    console.log('✅ App.js: Umfrage und Benachrichtigung erfolgreich hinzugefügt');
-    
-    return newSurvey;
+  const createSurvey = async (surveyData) => {
+    try {
+      console.log('🔄 App.js: Erstelle Umfrage in Firestore...', surveyData);
+      const currentUser = getCurrentUser();
+      
+      // Erstelle Umfrage in Firestore
+      const surveyId = await fsCreateSurvey({
+        ...surveyData,
+        createdBy: currentUser?.uid || null
+      });
+      
+      console.log('✅ App.js: Umfrage in Firestore erstellt:', surveyId);
+      
+      // Erstelle Notifications für alle Ziel-User
+      const notificationCount = await fsCreateNotificationsForSurvey(
+        surveyId,
+        surveyData.targetGroup || 'all'
+      );
+      
+      console.log(`✅ App.js: ${notificationCount} Notifications für Umfrage erstellt`);
+      
+      // Aktualisiere lokalen State (wird auch durch Subscription aktualisiert)
+      const newSurvey = await fsGetSurvey(surveyId);
+      if (newSurvey) {
+        setSurveys(prev => [...prev, newSurvey]);
+      }
+      
+      return { id: surveyId, ...newSurvey };
+    } catch (error) {
+      console.error('❌ Fehler beim Erstellen der Umfrage:', error);
+      Alert.alert('Fehler', 'Umfrage konnte nicht erstellt werden: ' + error.message);
+      throw error;
+    }
   };
 
   // PHASE 2: Vereinfachte Badge-Berechnung - nur noch unreadCount
@@ -2429,7 +3185,7 @@ useEffect(() => {
       if (n.isArchived) return false;
       
       // Unterstützte Notification-Typen
-      const supportedTypes = ['hint-decision', 'hint-small', 'chat', 'system'];
+      const supportedTypes = ['hint-decision', 'hint-small', 'chat', 'system', 'survey', 'newsletter'];
       if (!supportedTypes.includes(n.type)) return false;
       
       // Filtere Notifications von eigenen Nachrichten (nur für Chat-Typen)
@@ -2749,7 +3505,57 @@ useEffect(() => {
     });
   };
 
-  const answerSurvey = (surveyId, selectedOption) => {
+  const answerSurvey = async (surveyId, selectedOption) => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !currentUser.uid) {
+        Alert.alert('Fehler', 'Bitte melden Sie sich an, um an der Umfrage teilzunehmen.');
+        return false;
+      }
+      
+      // Hole Survey-Daten
+      const survey = await fsGetSurvey(surveyId);
+      if (!survey) {
+        Alert.alert('Fehler', 'Umfrage nicht gefunden.');
+        return false;
+      }
+      
+      // Prüfe, ob User bereits geantwortet hat
+      const hasAnswered = await fsHasUserAnsweredSurvey(currentUser.uid, surveyId);
+      if (hasAnswered) {
+        Alert.alert('Bereits teilgenommen', 'Sie haben bereits an dieser Umfrage teilgenommen.');
+        return false;
+      }
+      
+      // Speichere Antwort in Firestore
+      await fsSubmitSurveyAnswer(
+        currentUser.uid,
+        surveyId,
+        selectedOption,
+      );
+      
+      console.log('✅ Umfrage-Antwort gespeichert');
+      
+      // Markiere Notification als gelesen
+      const notifications = await fsGetNotificationsForUser(currentUser.uid);
+      const surveyNotification = notifications.find(n => 
+        n.type === 'survey' && n.surveyId === surveyId
+      );
+      
+      if (surveyNotification) {
+        await fsMarkNotificationAsRead(currentUser.uid, surveyNotification.id);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Fehler beim Beantworten der Umfrage:', error);
+      Alert.alert('Fehler', 'Antwort konnte nicht gespeichert werden: ' + error.message);
+      return false;
+    }
+  };
+  
+  // Alte answerSurvey Funktion (wird nicht mehr verwendet, aber für Kompatibilität behalten)
+  const answerSurveyOld = (surveyId, selectedOption) => {
     const currentUserId = getCurrentUser()?.id;
     
     // Prüfen ob User bereits an dieser Umfrage teilgenommen hat
@@ -2781,15 +3587,13 @@ useEffect(() => {
     };
     setSurveyAnswers(prev => [...prev, newAnswer]);
     
-    // BTP-Belohnung Benachrichtigung erstellen
-    const survey = surveys.find(s => s.id === surveyId);
-    
     // Umfrage-Benachrichtigung als gelesen markieren
     console.log('📖 Markiere Umfrage-Benachrichtigung als gelesen für Survey:', surveyId);
     setNotifications(prev => 
       prev.map(notification => {
         // Prüfe ob es eine Umfrage-Benachrichtigung für diese Survey ist
-        if (notification.type === 'system' && 
+        const survey = surveys.find(s => s.id === surveyId);
+        if (survey && notification.type === 'system' && 
             notification.message.includes(survey.title) && 
             notification.title.includes('Umfrage')) {
           console.log('✅ Umfrage-Benachrichtigung als gelesen markiert:', notification.id);
@@ -2798,22 +3602,6 @@ useEffect(() => {
         return notification;
       })
     );
-    
-    // WICHTIG: setUnreadNotifications entfernt - wird automatisch über refreshNotificationBadges aktualisiert
-    if (survey) {
-      const btpNotification = {
-        id: Date.now(),
-        type: 'system',
-        title: 'BTP gutgeschrieben',
-        message: `Du hast ${survey.btpReward} BTP für die Teilnahme an der Umfrage "${survey.title}" erhalten`,
-        timestamp: 'gerade eben',
-        isRead: false,
-        priority: 'medium'
-      };
-      
-      setNotifications(prev => [btpNotification, ...prev]);
-      // WICHTIG: setUnreadNotifications entfernt - wird automatisch über refreshNotificationBadges aktualisiert
-    }
     
     return true; // Teilnahme erfolgreich
   };
@@ -4229,47 +5017,111 @@ useEffect(() => {
   // PHASE3 ENDE
   // ============================================
 
-  const deleteSurvey = (surveyId) => {
-    setSurveys(prev => prev.filter(survey => survey.id !== surveyId));
-    console.log('Survey gelöscht:', surveyId);
+  const deleteSurvey = async (surveyId) => {
+    try {
+      // Lösche die Umfrage tatsächlich aus Firestore
+      await deleteDoc(doc(db, 'surveys', surveyId));
+      setSurveys(prev => prev.filter(survey => survey.id !== surveyId));
+      console.log('✅ Survey gelöscht:', surveyId);
+    } catch (error) {
+      console.error('❌ Fehler beim Löschen der Umfrage:', error);
+      Alert.alert('Fehler', 'Umfrage konnte nicht gelöscht werden: ' + error.message);
+      throw error;
+    }
+  };
+
+  const endSurvey = async (surveyId) => {
+    try {
+      await fsUpdateSurveyStatus(surveyId, 'closed');
+      setSurveys(prev => prev.map(s => 
+        s.id === surveyId ? { ...s, status: 'closed' } : s
+      ));
+      console.log('✅ Survey beendet:', surveyId);
+    } catch (error) {
+      console.error('❌ Fehler beim Beenden der Umfrage:', error);
+      Alert.alert('Fehler', 'Umfrage konnte nicht beendet werden.');
+    }
   };
 
   // Newsletter-Funktionen
-  const createNewsletter = (newsletterData) => {
-    console.log('🔄 App.js: Erstelle Newsletter...', newsletterData);
-    
-    const newNewsletter = {
-      id: Date.now(),
-      ...newsletterData,
-      status: 'draft',
-      createdAt: new Date().toLocaleDateString('de-DE')
-    };
-    
-    console.log('✅ App.js: Newsletter erstellt:', newNewsletter);
-    setNewsletters(prev => [...prev, newNewsletter]);
-    
-    // Newsletter-Benachrichtigung nur für Newsletter-Abonnenten erstellen
-    const currentUser = getCurrentUser();
-    if (currentUser && currentUser.newsletter) {
-      const newsletterNotification = {
-        id: Date.now() + 1,
-        type: 'newsletter',
-        title: 'Neuer Newsletter verfügbar',
-        message: `Ein neuer Newsletter "${newsletterData.title}" ist verfügbar!`,
-        timestamp: 'gerade eben',
-        isRead: false,
-        priority: 'medium'
-      };
+  const createNewsletter = async (newsletterData) => {
+    try {
+      console.log('🔄 App.js: Erstelle Newsletter in Firestore...', newsletterData);
+      const currentUser = getCurrentUser();
       
-      console.log('📧 App.js: Newsletter-Benachrichtigung erstellt für Newsletter-Abonnent:', newsletterNotification);
-      setNotifications(prev => [newsletterNotification, ...prev]);
-      // WICHTIG: setUnreadNotifications entfernt - wird automatisch über refreshNotificationBadges aktualisiert
-      console.log('✅ App.js: Newsletter und Benachrichtigung erfolgreich hinzugefügt');
-    } else {
-      console.log('ℹ️ App.js: Keine Newsletter-Benachrichtigung - User ist nicht für Newsletter abonniert');
+      // Erstelle Newsletter in Firestore (als "draft", noch nicht versendet)
+      const newsletterId = await fsCreateNewsletter({
+        ...newsletterData,
+        createdBy: currentUser?.uid || null
+      });
+      
+      console.log('✅ App.js: Newsletter in Firestore erstellt (Entwurf):', newsletterId);
+      
+      // Aktualisiere lokalen State (wird auch durch Subscription aktualisiert)
+      const newNewsletter = await fsGetNewsletter(newsletterId);
+      if (newNewsletter) {
+        setNewsletters(prev => [...prev, newNewsletter]);
+      }
+      
+      return { id: newsletterId, ...newNewsletter };
+    } catch (error) {
+      console.error('❌ Fehler beim Erstellen des Newsletters:', error);
+      Alert.alert('Fehler', 'Newsletter konnte nicht erstellt werden: ' + error.message);
+      throw error;
     }
-    
-    return newNewsletter;
+  };
+
+  const sendNewsletter = async (newsletterId, targetGroup = 'newsletter_subscribers') => {
+    try {
+      console.log('🔄 App.js: Versende Newsletter...', newsletterId, 'Zielgruppe:', targetGroup);
+      
+      // Erstelle Notifications für alle Ziel-User
+      const notificationCount = await fsCreateNotificationsForNewsletter(
+        newsletterId,
+        targetGroup
+      );
+      
+      console.log(`✅ App.js: ${notificationCount} Notifications für Newsletter erstellt`);
+      
+      if (notificationCount === 0) {
+        Alert.alert('Warnung', 'Keine Notifications erstellt. Möglicherweise wurden keine Ziel-User gefunden.');
+        return 0;
+      }
+      
+      // Aktualisiere Status auf "sent"
+      await fsUpdateNewsletterStatus(newsletterId, 'sent');
+      
+      // Aktualisiere lokalen State (wird auch durch Subscription aktualisiert)
+      const updatedNewsletter = await fsGetNewsletter(newsletterId);
+      if (updatedNewsletter) {
+        setNewsletters(prev => 
+          prev.map(n => n.id === newsletterId ? updatedNewsletter : n)
+        );
+      }
+      
+      Alert.alert('Erfolg', `Newsletter wurde erfolgreich an ${notificationCount} Empfänger gesendet!`);
+      return notificationCount;
+    } catch (error) {
+      console.error('❌ Fehler beim Versenden des Newsletters:', error);
+      Alert.alert('Fehler', 'Newsletter konnte nicht versendet werden: ' + error.message);
+      throw error;
+    }
+  };
+
+  const deleteNewsletter = async (newsletterId) => {
+    try {
+      // Lösche das Dokument komplett aus Firestore (Hard Delete)
+      const newsletterRef = doc(db, 'newsletters', newsletterId);
+      await deleteDoc(newsletterRef);
+      
+      // Aktualisiere lokalen State sofort
+      setNewsletters(prev => prev.filter(newsletter => newsletter.id !== newsletterId));
+      console.log('✅ Newsletter gelöscht:', newsletterId);
+      Alert.alert('Erfolg', 'Newsletter wurde gelöscht.');
+    } catch (error) {
+      console.error('❌ Fehler beim Löschen des Newsletters:', error);
+      Alert.alert('Fehler', 'Newsletter konnte nicht gelöscht werden: ' + error.message);
+    }
   };
 
   const deleteNotification = async (notificationId) => {
@@ -4306,57 +5158,75 @@ useEffect(() => {
     // WICHTIG: setUnreadNotifications entfernt - wird automatisch über refreshNotificationBadges aktualisiert
   }, []);
 
-  const createSystemMessage = (systemMessage) => {
-    console.log('📢 Erstelle Systemnachricht:', systemMessage);
-    
-    // Sicherstellen, dass jede Systemnachricht eine eindeutige ID hat
-    const messageWithId = {
-      ...systemMessage,
-      id: `system_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: new Date().toLocaleDateString('de-DE'),
-      status: 'draft'
-    };
-    
-    console.log('📢 Systemnachricht mit ID erstellt:', messageWithId.id);
-    setSystemMessages(prev => {
-      const newMessages = [...prev, messageWithId];
-      console.log('📢 Neue Systemnachrichten-Liste:', newMessages.length, 'Nachrichten');
-      return newMessages;
-    });
-    return messageWithId;
-  };
-
-  const sendSystemMessage = (systemMessageId) => {
-    console.log('📤 Sende Systemnachricht an alle Benutzer:', systemMessageId);
-    
-    // Systemnachricht als gesendet markieren und Benachrichtigung erstellen
-    setSystemMessages(prev => {
-      const updatedMessages = prev.map(message => 
-        message.id === systemMessageId 
-          ? { ...message, status: 'sent' }
-          : message
-      );
+  const createSystemMessage = async (systemMessage) => {
+    try {
+      console.log('📢 App.js: Erstelle Systemnachricht in Firestore...', systemMessage);
+      const currentUser = getCurrentUser();
       
-      // Benachrichtigung für alle Benutzer erstellen
-      const systemMessage = prev.find(msg => msg.id === systemMessageId);
-      if (systemMessage) {
-        const notification = {
-          id: `system_${Date.now()}`,
-          type: 'system',
-          title: '📢 Systemnachricht',
-          message: `"${systemMessage.title}" - ${systemMessage.content.substring(0, 50)}...`,
-          timestamp: new Date().toLocaleString('de-DE'),
-          isRead: false,
-          priority: systemMessage.priority
-        };
-        
-        setNotifications(prevNotifications => [...prevNotifications, notification]);
-        // WICHTIG: setUnreadNotifications entfernt - wird automatisch über refreshNotificationBadges aktualisiert
-        console.log('✅ Systemnachricht-Benachrichtigung erstellt für alle Benutzer');
+      // Erstelle Systemnachricht in Firestore (als "draft", noch nicht versendet)
+      const messageId = await fsCreateSystemMessage({
+        ...systemMessage,
+        createdBy: currentUser?.uid || null
+      });
+      
+      console.log('✅ App.js: Systemnachricht in Firestore erstellt (Entwurf):', messageId);
+      
+      // Aktualisiere lokalen State (wird auch durch Subscription aktualisiert)
+      const newMessage = await fsGetSystemMessage(messageId);
+      if (newMessage) {
+        setSystemMessages(prev => [...prev, newMessage]);
       }
       
-      return updatedMessages;
-    });
+      return { id: messageId, ...newMessage };
+    } catch (error) {
+      console.error('❌ Fehler beim Erstellen der Systemnachricht:', error);
+      Alert.alert('Fehler', 'Systemnachricht konnte nicht erstellt werden: ' + error.message);
+      throw error;
+    }
+  };
+
+  const sendSystemMessage = async (systemMessageId) => {
+    try {
+      console.log('📢 App.js: Versende Systemnachricht...', systemMessageId);
+      
+      // Lade Systemnachricht, um targetGroup zu erhalten
+      const systemMessage = await fsGetSystemMessage(systemMessageId);
+      if (!systemMessage) {
+        throw new Error('Systemnachricht nicht gefunden');
+      }
+      
+      // Erstelle Notifications für alle Ziel-User
+      const notificationCount = await fsCreateNotificationsForSystemMessage(
+        systemMessageId,
+        systemMessage.targetGroup || 'all'
+      );
+      
+      console.log(`✅ App.js: ${notificationCount} Notifications für Systemnachricht erstellt`);
+      
+      if (notificationCount === 0) {
+        Alert.alert('Warnung', 'Keine Notifications erstellt. Möglicherweise wurden keine Ziel-User gefunden.');
+        return 0;
+      }
+      
+      // Aktualisiere Status auf "sent"
+      await fsUpdateSystemMessageStatus(systemMessageId, 'sent');
+      
+      // Aktualisiere lokalen State (wird auch durch Subscription aktualisiert)
+      const updatedMessage = await fsGetSystemMessage(systemMessageId);
+      if (updatedMessage) {
+        setSystemMessages(prev => prev.map(msg => 
+          msg.id === systemMessageId ? updatedMessage : msg
+        ));
+      }
+      
+      console.log('✅ Systemnachricht gesendet:', systemMessageId);
+      Alert.alert('Erfolg', `Systemnachricht wurde erfolgreich an ${notificationCount} Empfänger gesendet!`);
+      return notificationCount;
+    } catch (error) {
+      console.error('❌ Fehler beim Senden der Systemnachricht:', error);
+      Alert.alert('Fehler', 'Systemnachricht konnte nicht gesendet werden: ' + (error.message || 'Unbekannter Fehler'));
+      throw error;
+    }
   };
 
   const markSystemMessageAsRead = React.useCallback((systemMessageId) => {
@@ -4377,9 +5247,45 @@ useEffect(() => {
     // WICHTIG: setUnreadNotifications entfernt - wird automatisch über refreshNotificationBadges aktualisiert
   }, []);
 
-         // Loading Screen entfernt für bessere Performance
-         console.log('🔄 App.js: Render-Zyklus - currentScreen:', currentScreen);
-         console.log('🔄 App.js: route?.params:', route?.params);
+  const deleteSystemMessage = async (systemMessageId) => {
+    try {
+      console.log('🗑️ App.js: Lösche Systemnachricht:', systemMessageId);
+      
+      // Lösche das Dokument komplett aus Firestore (Hard Delete)
+      const systemMessageRef = doc(db, 'systemMessages', systemMessageId);
+      await deleteDoc(systemMessageRef);
+      
+      // Aktualisiere lokalen State sofort
+      setSystemMessages(prev => prev.filter(msg => msg.id !== systemMessageId));
+      
+      console.log('✅ Systemnachricht gelöscht:', systemMessageId);
+      Alert.alert('Erfolg', 'Systemnachricht wurde gelöscht.');
+    } catch (error) {
+      console.error('❌ Fehler beim Löschen der Systemnachricht:', error);
+      Alert.alert('Fehler', 'Systemnachricht konnte nicht gelöscht werden: ' + (error.message || 'Unbekannter Fehler'));
+      throw error;
+    }
+  };
+
+        // Loading Screen entfernt für bessere Performance
+        // Render-Logs entfernt, um Endlosschleifen zu vermeiden
+
+        // TourOverlay - muss außerhalb aller Screens gerendert werden, damit es über allem liegt
+        const renderTourOverlay = () => {
+          if (!tourActive) return null;
+          return (
+            <TourOverlay
+              visible={tourActive}
+              tourSteps={tourSteps}
+              currentStepIndex={tourCurrentStepIndex}
+              onNext={handleTourNext}
+              onBack={handleTourBack}
+              onSkip={handleTourSkip}
+              onClose={handleEndTour}
+              elementPositions={tourElementPositions}
+            />
+          );
+        };
 
          if (currentScreen === 'login') {
            return (
@@ -4410,18 +5316,132 @@ useEffect(() => {
            );
          }
 
-         if (currentScreen === 'shop') {
-           return (
-             <>
-               <StatusBar style="light" />
-              <ShopScreen
+        if (currentScreen === 'shop') {
+          return (
+            <>
+              <StatusBar style="light" />
+             <ShopScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isLoggedIn={isLoggedIn}
+                isAdmin={isAdmin}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
+                cartItemCount={cartItemCount}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'warenkorb') {
+          return (
+            <>
+              <StatusBar style="light" />
+              <WarenkorbScreen
                 onNavigate={handleNavigate}
                 isLoggedIn={isLoggedIn}
-                unreadCount={unreadCount}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
               />
-             </>
-           );
-         }
+            </>
+          );
+        }
+
+        if (currentScreen === 'payment-success') {
+          return (
+            <>
+              <StatusBar style="light" />
+              <PaymentSuccessScreen
+                onNavigate={handleNavigate}
+                isLoggedIn={isLoggedIn}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
+                route={route}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'payment-cancel') {
+          return (
+            <>
+              <StatusBar style="light" />
+              <PaymentCancelScreen
+                onNavigate={handleNavigate}
+                isLoggedIn={isLoggedIn}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
+                route={route}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'rundgang') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+              <RundgangScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                isLoggedIn={isLoggedIn}
+                onStartTour={handleStartTour}
+                tourCompleted={tourCompleted}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'impressum') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2f3a3b" />
+              <StatusBar style="light" />
+              <ImpressumScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                isLoggedIn={isLoggedIn}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'datenschutz') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+              <DatenschutzScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                isLoggedIn={isLoggedIn}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'kontakt') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2f3a3b" />
+              <StatusBar style="light" />
+              <KontaktScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                isLoggedIn={isLoggedIn}
+              />
+            </>
+          );
+        }
 
          if (currentScreen === 'weinregal') {
            return (
@@ -4433,6 +5453,23 @@ useEffect(() => {
                 onLogout={handleLogout}
                 isAdmin={isAdmin}
                 unreadCount={unreadCount}
+                isLoggedIn={isLoggedIn}
+              />
+             </>
+           );
+         }
+
+         if (currentScreen === 'weinregal-ki') {
+           return (
+             <>
+               <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+               <StatusBar style="light" />
+              <MeinWeinregalBefuellenKIScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
                 isLoggedIn={isLoggedIn}
               />
              </>
@@ -4453,6 +5490,7 @@ useEffect(() => {
                  viewUserId={route?.params?.viewUserId}
                  tradeRequestId={route?.params?.tradeRequestId}
                  onSelectTradeWine={handleSelectTradeWine}
+                 wishlistMatchCount={wishlistMatchCount}
                  onDeclineTradeRequest={({ requestId, otherUserId }) => declineTradeRequestSimple({ requestId, otherUserId })}
                />
              </>
@@ -4472,6 +5510,7 @@ useEffect(() => {
                chats={chats}
                isLoggedIn={isLoggedIn}
                onCreateTradeRequest={createTradeRequest}
+               wishlistMatchCount={wishlistMatchCount}
              />
              </>
            );
@@ -4486,27 +5525,99 @@ useEffect(() => {
                 onNavigate={handleNavigate}
                 onLogout={handleLogout}
                 isAdmin={isAdmin}
-                unreadCount={unreadCount}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
                 isLoggedIn={isLoggedIn}
+                wishlistMatchCount={wishlistMatchCount}
               />
              </>
            );
          }
 
-         if (currentScreen === 'btp') {
-           return (
-             <>
-               <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
-               <StatusBar style="light" />
-              <BtpScreen
+        if (currentScreen === 'schwarzes-brett') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+              <SchwarzesBrettScreen
                 onNavigate={handleNavigate}
                 onLogout={handleLogout}
-                unreadCount={unreadCount}
+                isAdmin={isAdmin}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
                 isLoggedIn={isLoggedIn}
               />
-             </>
-           );
-         }
+            </>
+          );
+        }
+
+        if (currentScreen === 'weingueter') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+              <WeingueterScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                chats={chats}
+                isLoggedIn={isLoggedIn}
+                wishlistMatchCount={wishlistMatchCount}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'statistiken') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+              <StatistikScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                isLoggedIn={isLoggedIn}
+                wishlistMatchCount={wishlistMatchCount}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'header-test') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+              <HeaderTestScreen
+                onNavigate={handleNavigate}
+                isLoggedIn={isLoggedIn}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'users') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+             <UserScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
+                isLoggedIn={isLoggedIn}
+              />
+            </>
+          );
+        }
+
 
          if (currentScreen === 'profil') {
            return (
@@ -4519,6 +5630,7 @@ useEffect(() => {
                 isAdmin={isAdmin}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                currentUser={user}
               />
              </>
            );
@@ -4534,7 +5646,10 @@ useEffect(() => {
                onLogout={handleLogout}
                isAdmin={isAdmin}
                isLoggedIn={isLoggedIn}
-               unreadCount={unreadCount}
+               unreadNotifications={unreadCount}
+               unreadHints={0}
+               wishlistMatchCount={wishlistMatchCount}
+               onWishlistUpdated={refreshWishlistMatchCount}
              />
             </>
           );
@@ -4584,7 +5699,11 @@ useEffect(() => {
                 isAdmin={isAdmin}
                 unreadCount={unreadCount}
                 isLoggedIn={isLoggedIn}
+                wishlistMatchCount={wishlistMatchCount}
+                onUpdateTourElementPosition={updateTourElementPosition}
               />
+              {/* TourOverlay - liegt über allen Screens (Modal) */}
+              {renderTourOverlay()}
              </>
            );
          }
@@ -4618,8 +5737,11 @@ useEffect(() => {
                surveys={surveys}
                onCreateSurvey={createSurvey}
                onDeleteSurvey={deleteSurvey}
+               onEndSurvey={endSurvey}
+               onGetSurveyAnswers={fsGetSurveyAnswers}
                isLoggedIn={isLoggedIn}
-               unreadCount={unreadCount}
+               unreadNotifications={unreadCount}
+               unreadHints={0}
               />
             </>
           );
@@ -4634,6 +5756,8 @@ useEffect(() => {
                 onLogout={handleLogout}
                 newsletters={newsletters}
                 onCreateNewsletter={createNewsletter}
+                onSendNewsletter={sendNewsletter}
+                onDeleteNewsletter={deleteNewsletter}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
               />
@@ -4702,6 +5826,7 @@ useEffect(() => {
          }
 
         if (currentScreen === 'survey-answer') {
+          // Versuche Survey aus State zu finden, sonst wird es aus Firestore geladen
           const survey = surveys.find(s => s.id === route?.params?.surveyId);
           return (
             <>
@@ -4710,9 +5835,11 @@ useEffect(() => {
                 onNavigate={handleNavigate} 
                 onLogout={handleLogout}
                 survey={survey}
+                surveyId={route?.params?.surveyId}
                 onAnswerSurvey={answerSurvey}
                 isLoggedIn={isLoggedIn}
-                unreadCount={unreadCount}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
               />
             </>
           );
@@ -4729,22 +5856,27 @@ useEffect(() => {
                 surveyAnswers={surveyAnswers}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                onGetSurveyAnswers={fsGetSurveyAnswers}
               />
             </>
           );
         }
 
         if (currentScreen === 'newsletter-reader') {
+          // Versuche Newsletter aus State zu finden, sonst wird es aus Firestore geladen
+          const newsletter = newsletters.find(n => n.id === route?.params?.newsletterId) || route?.params?.newsletter;
           return (
             <>
               <StatusBar style="light" />
               <NewsletterReaderScreen 
                 onNavigate={handleNavigate} 
                 onLogout={handleLogout}
-                newsletter={route?.params?.newsletter}
+                newsletter={newsletter}
+                newsletterId={route?.params?.newsletterId}
                 onMarkNewsletterAsRead={markNewsletterAsRead}
                 isLoggedIn={isLoggedIn}
-                unreadCount={unreadCount}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
               />
             </>
           );
@@ -4812,6 +5944,34 @@ useEffect(() => {
           );
         }
 
+        if (currentScreen === 'admin-hints') {
+          return (
+            <>
+              <StatusBar style="light" />
+              <AdminHintsScreen 
+                onNavigate={handleNavigate} 
+                onLogout={handleLogout}
+                isLoggedIn={isLoggedIn}
+                unreadCount={unreadCount}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'admin-data-management') {
+          return (
+            <>
+              <StatusBar style="light" />
+              <AdminDataManagementScreen 
+                onNavigate={handleNavigate} 
+                onLogout={handleLogout}
+                isLoggedIn={isLoggedIn}
+                unreadCount={unreadCount}
+              />
+            </>
+          );
+        }
+
         if (currentScreen === 'admin-system-messages') {
           return (
             <>
@@ -4822,6 +5982,7 @@ useEffect(() => {
                 systemMessages={systemMessages || []}
                 onCreateSystemMessage={createSystemMessage}
                 onSendSystemMessage={sendSystemMessage}
+                onDeleteSystemMessage={deleteSystemMessage}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
               />
@@ -4829,17 +5990,49 @@ useEffect(() => {
           );
         }
 
+        if (currentScreen === 'admin-shop') {
+          return (
+            <>
+              <StatusBar style="light" />
+              <AdminShopScreen
+                onNavigate={handleNavigate}
+                isLoggedIn={isLoggedIn}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'admin-orders') {
+          return (
+            <>
+              <StatusBar style="light" />
+              <AdminOrdersScreen
+                onNavigate={handleNavigate}
+                isLoggedIn={isLoggedIn}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
+              />
+            </>
+          );
+        }
+
         if (currentScreen === 'system-message-reader') {
+          // Versuche SystemMessage aus State zu finden, sonst wird es aus Firestore geladen
+          const systemMessage = systemMessages.find(m => m.id === route?.params?.messageId) || route?.params?.systemMessage;
           return (
             <>
               <StatusBar style="light" />
               <SystemMessageReaderScreen 
                 onNavigate={handleNavigate} 
                 onLogout={handleLogout}
-                systemMessage={route?.params?.systemMessage}
+                systemMessage={systemMessage}
+                messageId={route?.params?.messageId}
                 onMarkSystemMessageAsRead={markSystemMessageAsRead}
                 isLoggedIn={isLoggedIn}
-                unreadCount={unreadCount}
+                unreadNotifications={unreadCount}
+                unreadHints={0}
                />
              </>
            );
@@ -5028,14 +6221,18 @@ useEffect(() => {
                 <Text style={styles.welcomeButtonText}>Was ist BT</Text>
               </TouchableOpacity>
             </View>
+            
           </View>
         );
 }
 
+// TourOverlay wird außerhalb der Komponente gerendert, damit es über allen Screens liegt
+// Da Modal über allem liegt, rendern wir es hier als separate Komponente
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#d5dfe0',
+    backgroundColor: '#2c2c2c',
     width: '100%',
     paddingHorizontal: 0,
     marginHorizontal: 0,

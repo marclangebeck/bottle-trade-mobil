@@ -10,20 +10,29 @@ import {
   Platform,
   StatusBar
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import OptimizedImage from '../components/OptimizedImage';
 
-export default function AdminSystemMessagesScreen({ onNavigate, onLogout, systemMessages = [], onCreateSystemMessage, onSendSystemMessage, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminSystemMessagesScreen({ onNavigate, onLogout, systemMessages = [], onCreateSystemMessage, onSendSystemMessage, onDeleteSystemMessage, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingMessage, setIsCreatingMessage] = useState(false);
+  const [isCreating, setIsCreating] = useState(false); // Verhindert doppelte Aufrufe
   const [messageData, setMessageData] = useState({
     title: '',
     content: '',
     priority: 'normal'
   });
 
-  const handleCreateMessage = () => {
+  const handleCreateMessage = async () => {
+    // Verhindere doppelte Aufrufe
+    if (isCreating) {
+      console.log('⚠️ Erstellung läuft bereits, überspringe erneuten Aufruf');
+      return;
+    }
+
     console.log('🔄 Erstelle neue Systemnachricht...', messageData);
     
     if (!messageData.title.trim() || !messageData.content.trim()) {
@@ -33,52 +42,93 @@ export default function AdminSystemMessagesScreen({ onNavigate, onLogout, system
     }
 
     console.log('✅ Systemnachricht-Daten validiert, erstelle Systemnachricht...');
+    setIsCreating(true);
 
-    if (onCreateSystemMessage) {
-      onCreateSystemMessage(messageData);
-      console.log('✅ Systemnachricht erfolgreich erstellt und an App.js weitergegeben');
+    try {
+      if (onCreateSystemMessage) {
+        await onCreateSystemMessage(messageData);
+        console.log('✅ Systemnachricht erfolgreich erstellt und an App.js weitergegeben');
+        
+        Alert.alert('Erfolg', 'Systemnachricht wurde erfolgreich erstellt! Sie können sie jetzt über den "Senden"-Button versenden.');
+        setIsCreatingMessage(false);
+        setMessageData({
+          title: '',
+          content: '',
+          priority: 'normal'
+        });
+      } else {
+        Alert.alert('Fehler', 'Erstellungs-Funktion nicht verfügbar.');
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Erstellen der Systemnachricht:', error);
+      Alert.alert('Fehler', 'Systemnachricht konnte nicht erstellt werden: ' + (error.message || 'Unbekannter Fehler'));
+    } finally {
+      setIsCreating(false);
     }
-    
-    Alert.alert('Erfolg', 'Systemnachricht wurde erfolgreich erstellt und an alle Benutzer gesendet!');
-    setIsCreatingMessage(false);
-    setMessageData({
-      title: '',
-      content: '',
-      priority: 'normal'
-    });
   };
 
   const handleBack = () => {
     onNavigate('admin-dashboard');
   };
 
-  const handleSendMessage = (message) => {
+  const handleSendMessage = async (message) => {
+    // Prüfe, ob Systemnachricht bereits versendet wurde
+    if (message.status === 'sent') {
+      Alert.alert('Hinweis', 'Diese Systemnachricht wurde bereits versendet.');
+      return;
+    }
+
     Alert.alert(
       'Systemnachricht senden',
       `Möchten Sie die Systemnachricht "${message.title}" wirklich an alle Benutzer senden?`,
       [
         { text: 'Abbrechen', style: 'cancel' },
-        { text: 'Senden', style: 'default', onPress: () => {
-          console.log('📢 Systemnachricht gesendet:', message.id);
-          if (onSendSystemMessage) {
-            onSendSystemMessage(message.id);
+        { 
+          text: 'Senden', 
+          style: 'default', 
+          onPress: async () => {
+            try {
+              console.log('📢 Systemnachricht gesendet:', message.id);
+              if (onSendSystemMessage) {
+                const notificationCount = await onSendSystemMessage(message.id);
+                // Alert wird bereits in sendSystemMessage angezeigt
+              } else {
+                Alert.alert('Fehler', 'Send-Funktion nicht verfügbar.');
+              }
+            } catch (error) {
+              console.error('❌ Fehler beim Versenden:', error);
+              Alert.alert('Fehler', 'Systemnachricht konnte nicht versendet werden: ' + (error.message || 'Unbekannter Fehler'));
+            }
           }
-          Alert.alert('Erfolg', 'Systemnachricht wurde gesendet!');
-        }}
+        }
       ]
     );
   };
 
-  const handleDeleteMessage = (message) => {
+  const handleDeleteMessage = async (message) => {
     Alert.alert(
       'Systemnachricht löschen',
       `Möchten Sie die Systemnachricht "${message.title}" wirklich löschen?`,
       [
         { text: 'Abbrechen', style: 'cancel' },
-        { text: 'Löschen', style: 'destructive', onPress: () => {
-          console.log('🗑️ Systemnachricht gelöscht:', message.id);
-          Alert.alert('Erfolg', 'Systemnachricht wurde gelöscht!');
-        }}
+        { 
+          text: 'Löschen', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              console.log('🗑️ Systemnachricht gelöscht:', message.id);
+              if (onDeleteSystemMessage) {
+                await onDeleteSystemMessage(message.id);
+                // Alert wird bereits in deleteSystemMessage angezeigt
+              } else {
+                Alert.alert('Fehler', 'Lösch-Funktion nicht verfügbar.');
+              }
+            } catch (error) {
+              console.error('❌ Fehler beim Löschen:', error);
+              Alert.alert('Fehler', 'Systemnachricht konnte nicht gelöscht werden: ' + (error.message || 'Unbekannter Fehler'));
+            }
+          }
+        }
       ]
     );
   };
@@ -112,21 +162,58 @@ export default function AdminSystemMessagesScreen({ onNavigate, onLogout, system
       />
       
       <View style={styles.contentContainer}>
-        <View style={styles.header}>
-          <View style={styles.hamburgerContainer}>
+        {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
+        <View style={styles.logoHeaderContainer}>
+          {/* Hamburger-Menü links */}
+          <View style={styles.headerLeft}>
+            <View style={styles.hamburgerContainer}>
+              <TouchableOpacity 
+                style={styles.hamburgerButton}
+                onPress={() => setIsMenuVisible(!isMenuVisible)}
+              >
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          {/* Bottle (Logo) Trade in der Mitte */}
+          <View style={styles.logoHeaderCenter}>
+            <Text style={styles.logoHeaderText}>Bottle</Text>
+            <View style={styles.logoImageWrapper}>
+              <OptimizedImage
+                source={require('../assets/images/Logo_white.png')}
+                style={styles.logoHeaderImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.logoHeaderText}>Trade</Text>
+          </View>
+          
+          {/* Profil-Icon rechts */}
+          <View style={styles.profileSection}>
             <TouchableOpacity 
-              style={styles.hamburgerButton}
-              onPress={() => setIsMenuVisible(!isMenuVisible)}
+              style={styles.profileIconContainer}
+              onPress={() => onNavigate('profil')}
             >
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
-              <View style={styles.hamburgerLine} />
+              <View style={styles.profileIconCircle}>
+                <Text style={styles.profileIconText}>A</Text>
+              </View>
             </TouchableOpacity>
           </View>
+        </View>
+        
+        {/* Tagline unter dem Logo-Header */}
+        <View style={styles.taglineContainer}>
+          <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
+        </View>
+        
+        {/* Header mit Überschrift */}
+        <View style={styles.header}>
           <View style={styles.headerCenter}>
             <Text style={styles.greeting}>System</Text>
           </View>
-          <View style={styles.headerRight} />
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -232,10 +319,13 @@ export default function AdminSystemMessagesScreen({ onNavigate, onLogout, system
                     </TouchableOpacity>
                     
                     <TouchableOpacity 
-                      style={styles.createButton} 
+                      style={[styles.createButton, isCreating && styles.createButtonDisabled]} 
                       onPress={handleCreateMessage}
+                      disabled={isCreating}
                     >
-                      <Text style={styles.createButtonText}>Systemnachricht erstellen</Text>
+                      <Text style={styles.createButtonText}>
+                        {isCreating ? 'Erstelle...' : 'Systemnachricht erstellen'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -249,36 +339,51 @@ export default function AdminSystemMessagesScreen({ onNavigate, onLogout, system
               ) : (
                 <View>
                   {systemMessages.map((message, index) => (
-                    <View key={`msg-${index}`} style={styles.messageCard}>
-                      <View style={styles.messageHeader}>
-                        <Text style={styles.messageTitle}>{message.title}</Text>
-                        <Text style={styles.messageDate}>{message.createdAt}</Text>
-                      </View>
-                      
-                      <Text style={styles.messageContent} numberOfLines={3}>
-                        {message.content}
-                      </Text>
-                      
-                      <View style={styles.messageStats}>
-                        <Text style={styles.statText}>Priorität: {message.priority}</Text>
-                        <Text style={styles.statText}>Status: {message.status || 'Entwurf'}</Text>
-                      </View>
-                      
-                      <View style={styles.messageActions}>
-                        <TouchableOpacity 
-                          style={[styles.actionButton, styles.sendButton]} 
-                          onPress={() => handleSendMessage(message)}
-                        >
-                          <Text style={styles.actionButtonText}>📤 Senden</Text>
-                        </TouchableOpacity>
+                    <View key={`msg-${index}`} style={styles.messageCardWrapper}>
+                      <LinearGradient
+                        colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.messageCard}
+                      >
+                        <View style={styles.messageHeader}>
+                          <Text style={styles.messageTitle}>{message.title}</Text>
+                          <Text style={styles.messageDate}>
+                            {message.createdAt 
+                              ? (message.createdAt.toDate 
+                                ? message.createdAt.toDate().toLocaleDateString('de-DE') 
+                                : message.createdAt.seconds 
+                                  ? new Date(message.createdAt.seconds * 1000).toLocaleDateString('de-DE')
+                                  : new Date(message.createdAt).toLocaleDateString('de-DE'))
+                              : 'Unbekannt'}
+                          </Text>
+                        </View>
                         
-                        <TouchableOpacity 
-                          style={[styles.actionButton, styles.deleteButton]} 
-                          onPress={() => handleDeleteMessage(message)}
-                        >
-                          <Text style={styles.actionButtonText}>🗑️ Löschen</Text>
-                        </TouchableOpacity>
-                      </View>
+                        <Text style={styles.messageContent} numberOfLines={3}>
+                          {message.content}
+                        </Text>
+                        
+                        <View style={styles.messageStats}>
+                          <Text style={styles.statText}>Priorität: {message.priority}</Text>
+                          <Text style={styles.statText}>Status: {message.status || 'Entwurf'}</Text>
+                        </View>
+                        
+                        <View style={styles.messageActions}>
+                          <TouchableOpacity 
+                            style={[styles.actionButton, styles.sendButton]} 
+                            onPress={() => handleSendMessage(message)}
+                          >
+                            <Text style={styles.actionButtonText}>📤 Senden</Text>
+                          </TouchableOpacity>
+                          
+                          <TouchableOpacity 
+                            style={[styles.actionButton, styles.deleteButton]} 
+                            onPress={() => handleDeleteMessage(message)}
+                          >
+                            <Text style={styles.actionButtonText}>🗑️ Löschen</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </LinearGradient>
                     </View>
                   ))}
                 </View>
@@ -306,76 +411,158 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
   },
-  header: {
+  logoHeaderContainer: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    width: '100%',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: 'rgba(218, 165, 32, 0.4)', // Warmes Gold mit Glassmorphism
-    position: 'relative',
-    marginTop: Platform.OS === 'ios' ? 60 : 50,
-    minHeight: 90,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(218, 165, 32, 0.5)', // Warmes Gold Akzent
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(218, 165, 32, 0.3)',
-    // Glassmorphism Effekt
-    shadowColor: '#DAA520',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
-  backButton: {
-    backgroundColor: '#D2691E',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
+  logoHeaderCenter: {
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#D2691E',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    justifyContent: 'center',
+    flex: 1,
   },
-  backButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  logoHeaderText: {
+    fontSize: 28,
     fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  logoImageWrapper: {
+    width: 40,
+    height: 40,
+    marginLeft: 6, // Reduziert von 12 auf 6 (50%)
+    marginRight: 6, // Reduziert von 12 auf 6 (50%)
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoHeaderImage: {
+    width: 40,
+    height: 40,
+  },
+  profileSection: {
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileIconContainer: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  profileIconCircle: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  profileIconText: {
+    fontSize: 25,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0, // Auf 0px gesetzt
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
+
+  headerLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
   },
   hamburgerContainer: {
     flex: 0,
     position: 'relative',
     zIndex: 1000,
-    width: 40,
+    width: 44,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22, // Vollständig rund
+    backgroundColor: 'rgba(47, 58, 59, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
   hamburgerLine: {
     width: 22,
     height: 2.5,
-    backgroundColor: '#2c2c2c', // Dunkler auf hellem Header
+    backgroundColor: '#FFFFFF',
     marginVertical: 3,
     borderRadius: 1.5,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#2c2c2c',
+    position: 'relative',
+    marginTop: 0,
+    minHeight: 60,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
   headerCenter: {
     flex: 1,
     alignItems: 'center',
   },
-  headerRight: {
-    flex: 0,
-    width: 80,
-    alignItems: 'center',
-  },
   greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c2c2c', // Dunkler Text auf hellem Header
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#FFFFFF',
     textAlign: 'center',
+    letterSpacing: 1,
+    includeFontPadding: false,
+  },
+  backButton: {
+    padding: 10,
+    marginBottom: 10,
+  },
+  backButtonText: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   content: {
     flex: 1,
@@ -540,18 +727,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  createButtonDisabled: {
+    opacity: 0.6,
+  },
+  messageCardWrapper: {
+    marginBottom: 15,
+  },
   messageCard: {
-    backgroundColor: '#FFFFFF',
     padding: 20,
     borderRadius: 16,
-    marginBottom: 15,
     borderWidth: 1,
-    borderColor: 'rgba(47, 58, 59, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: 'hidden',
   },
   messageHeader: {
     flexDirection: 'row',
@@ -560,29 +752,33 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   messageTitle: {
-    color: '#2f3a3b',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
     flex: 1,
     marginRight: 10,
+    opacity: 0.95,
   },
   messageDate: {
-    color: '#666666',
+    color: '#FFFFFF',
     fontSize: 14,
+    opacity: 0.75,
   },
   messageContent: {
-    color: '#333333',
+    color: '#FFFFFF',
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 15,
+    opacity: 0.85,
   },
   messageStats: {
     marginBottom: 15,
   },
   statText: {
-    color: '#666666',
+    color: '#FFFFFF',
     fontSize: 12,
     marginBottom: 5,
+    opacity: 0.75,
   },
   messageActions: {
     flexDirection: 'row',
@@ -591,24 +787,23 @@ const styles = StyleSheet.create({
   actionButton: {
     paddingHorizontal: 15,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: 8,
     marginHorizontal: 2,
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
   },
   sendButton: {
-    backgroundColor: '#F8F9FA',
-    borderWidth: 1.5,
-    borderColor: '#D2691E',
+    borderColor: 'rgba(218, 165, 32, 0.5)',
   },
   deleteButton: {
-    backgroundColor: '#F8F9FA',
-    borderWidth: 1.5,
-    borderColor: '#F44336',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   actionButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2f3a3b',
+    color: '#FFFFFF',
+    opacity: 0.9,
   },
   emptyText: {
     color: '#666666',
