@@ -12,6 +12,7 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 
 import { getCurrentUser } from '../services/testAuth';
 
@@ -32,9 +33,8 @@ export default function NotificationsScreen({
   isLoggedIn = false,
   onTradeAccept = null,
   onTradeDecline = null,
-  unreadNotifications = 0,
-  unreadHints = 0,
-}) {
+  unreadCount = 0,
+}, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
 
   // Verwende die übergebenen Notifications
@@ -153,7 +153,8 @@ export default function NotificationsScreen({
     });
   }, [allNotifications, chats]);
 
-  const unreadCount = allNotifications.filter(n => !n.isRead).length;
+  // Verwende die Prop unreadCount statt lokale Berechnung
+  // const localUnreadCount = allNotifications.filter(n => !n.isRead).length;
 
   const getNotificationIcon = (type) => {
     switch(type) {
@@ -622,9 +623,15 @@ export default function NotificationsScreen({
           <BottomNavigation
             onNavigate={onNavigate}
             isLoggedIn={isLoggedIn}
-            unreadNotifications={unreadNotifications}
-            unreadHints={unreadHints}
+            unreadCount={unreadCount}
           />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
     </View>
   );
 }

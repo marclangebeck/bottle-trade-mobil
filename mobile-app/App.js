@@ -40,6 +40,7 @@ import AdminChatsScreen from './screens/AdminChatsScreen';
 import AdminTradesScreen from './screens/AdminTradesScreen';
 import AdminWinesScreen from './screens/AdminWinesScreen';
 import AdminUsersScreen from './screens/AdminUsersScreen';
+import AdminWineriesScreen from './screens/AdminWineriesScreen';
 import AdminHintsScreen from './screens/AdminHintsScreen';
 import AdminDataManagementScreen from './screens/AdminDataManagementScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
@@ -56,6 +57,7 @@ import InfoBoxScreen from './screens/InfoBoxScreen';
 import ImpressumScreen from './screens/ImpressumScreen';
 import DatenschutzScreen from './screens/DatenschutzScreen';
 import KontaktScreen from './screens/KontaktScreen';
+import AppEmpfehlenScreen from './screens/AppEmpfehlenScreen';
 import RundgangScreen from './screens/RundgangScreen';
 import SchwarzesBrettScreen from './screens/SchwarzesBrettScreen';
 import WeingueterScreen from './screens/WeingueterScreen';
@@ -66,6 +68,8 @@ import AdminShopScreen from './screens/AdminShopScreen';
 import AdminOrdersScreen from './screens/AdminOrdersScreen';
 import PaymentSuccessScreen from './screens/PaymentSuccessScreen';
 import PaymentCancelScreen from './screens/PaymentCancelScreen';
+import ProVersionScreen from './screens/ProVersionScreen';
+import ProVersionButton from './components/ProVersionButton';
 import { createAdminTestChat, createTestAdminChat, createAdminTestMessages } from './services/testChatData';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Footer from './Footer';
@@ -161,8 +165,25 @@ export default function App() {
   const pendingNotificationDeletionsRef = useRef(new Set()); // Track Notifications, die gerade gelöscht werden
   const [wishlistMatchCount, setWishlistMatchCount] = useState(0); // Anzahl der Wünsche mit Matches
   const [cartItemCount, setCartItemCount] = useState(0); // Anzahl der Artikel im Warenkorb
+  const [isPro, setIsPro] = useState(false); // Pro-Version Status
   const userSubscriptionRef = useRef(null); // Track User-Subscription für Cleanup
   const cartSubscriptionRef = useRef(null); // Track Warenkorb-Subscription für Cleanup
+  
+  // Lade Pro-Status aus Firestore
+  const loadProStatus = useCallback(async (userId) => {
+    try {
+      if (!userId) {
+        setIsPro(false);
+        return;
+      }
+      const { isProUser } = await import('./services/subscriptionLimits');
+      const proStatus = await isProUser(userId);
+      setIsPro(proStatus);
+    } catch (error) {
+      console.error('❌ Fehler beim Laden des Pro-Status:', error);
+      setIsPro(false);
+    }
+  }, []);
   
   // Tour-State (isoliert, beeinflusst keine bestehende Funktionalität)
   const [tourActive, setTourActive] = useState(false);
@@ -313,6 +334,9 @@ export default function App() {
             } else {
               setIsAdmin(false);
             }
+            
+            // Pro-Status laden
+            await loadProStatus(currentUser.uid);
             
             // Login-Status setzen und zum Dashboard navigieren
             setIsLoggedIn(true);
@@ -1740,6 +1764,9 @@ useEffect(() => {
           setIsAdmin(false);
           console.log('ℹ️ Standard-User erkannt:', currentUser.email, '(', displayName, ')');
         }
+        
+        // Pro-Status laden
+        await loadProStatus(currentUser.uid);
 
         // Wunschliste-Matches prüfen
         await refreshWishlistMatchCount();
@@ -1770,6 +1797,7 @@ useEffect(() => {
       setUserName('');
       setUserEmail('');
       setUser(null);
+      setIsPro(false);
       setWishlistMatchCount(0);
     setCurrentScreen('welcome');
       console.log('✅ User logged out - Admin-Status und User-Info zurückgesetzt');
@@ -5328,6 +5356,7 @@ useEffect(() => {
                 unreadNotifications={unreadCount}
                 unreadHints={0}
                 cartItemCount={cartItemCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5342,6 +5371,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadNotifications={unreadCount}
                 unreadHints={0}
+                isPro={isPro}
               />
             </>
           );
@@ -5357,6 +5387,7 @@ useEffect(() => {
                 unreadNotifications={unreadCount}
                 unreadHints={0}
                 route={route}
+                isPro={isPro}
               />
             </>
           );
@@ -5372,6 +5403,7 @@ useEffect(() => {
                 unreadNotifications={unreadCount}
                 unreadHints={0}
                 route={route}
+                isPro={isPro}
               />
             </>
           );
@@ -5390,6 +5422,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 onStartTour={handleStartTour}
                 tourCompleted={tourCompleted}
+                isPro={isPro}
               />
             </>
           );
@@ -5406,6 +5439,7 @@ useEffect(() => {
                 isAdmin={isAdmin}
                 unreadCount={unreadCount}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
             </>
           );
@@ -5422,6 +5456,7 @@ useEffect(() => {
                 isAdmin={isAdmin}
                 unreadCount={unreadCount}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
             </>
           );
@@ -5438,6 +5473,24 @@ useEffect(() => {
                 isAdmin={isAdmin}
                 unreadCount={unreadCount}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
+              />
+            </>
+          );
+        }
+
+        if (currentScreen === 'app-empfehlen') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2f3a3b" />
+              <StatusBar style="light" />
+              <AppEmpfehlenScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
             </>
           );
@@ -5454,6 +5507,7 @@ useEffect(() => {
                 isAdmin={isAdmin}
                 unreadCount={unreadCount}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
              </>
            );
@@ -5471,6 +5525,7 @@ useEffect(() => {
                 unreadNotifications={unreadCount}
                 unreadHints={0}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
              </>
            );
@@ -5492,6 +5547,7 @@ useEffect(() => {
                  onSelectTradeWine={handleSelectTradeWine}
                  wishlistMatchCount={wishlistMatchCount}
                  onDeclineTradeRequest={({ requestId, otherUserId }) => declineTradeRequestSimple({ requestId, otherUserId })}
+                 isPro={isPro}
                />
              </>
            );
@@ -5511,6 +5567,7 @@ useEffect(() => {
                isLoggedIn={isLoggedIn}
                onCreateTradeRequest={createTradeRequest}
                wishlistMatchCount={wishlistMatchCount}
+               isPro={isPro}
              />
              </>
            );
@@ -5529,6 +5586,7 @@ useEffect(() => {
                 unreadHints={0}
                 isLoggedIn={isLoggedIn}
                 wishlistMatchCount={wishlistMatchCount}
+                isPro={isPro}
               />
              </>
            );
@@ -5546,6 +5604,7 @@ useEffect(() => {
                 unreadNotifications={unreadCount}
                 unreadHints={0}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
             </>
           );
@@ -5564,6 +5623,7 @@ useEffect(() => {
                 chats={chats}
                 isLoggedIn={isLoggedIn}
                 wishlistMatchCount={wishlistMatchCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5581,6 +5641,7 @@ useEffect(() => {
                 unreadCount={unreadCount}
                 isLoggedIn={isLoggedIn}
                 wishlistMatchCount={wishlistMatchCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5596,6 +5657,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadNotifications={unreadCount}
                 unreadHints={0}
+                isPro={isPro}
               />
             </>
           );
@@ -5613,6 +5675,7 @@ useEffect(() => {
                 unreadNotifications={unreadCount}
                 unreadHints={0}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
             </>
           );
@@ -5631,6 +5694,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
                 currentUser={user}
+                isPro={isPro}
               />
              </>
            );
@@ -5650,6 +5714,7 @@ useEffect(() => {
                unreadHints={0}
                wishlistMatchCount={wishlistMatchCount}
                onWishlistUpdated={refreshWishlistMatchCount}
+               isPro={isPro}
              />
             </>
           );
@@ -5666,6 +5731,7 @@ useEffect(() => {
                 wineData={route?.params?.wineData}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
              </>
            );
@@ -5684,6 +5750,7 @@ useEffect(() => {
                 backTarget={route?.params?.backTarget || 'weinboerse'}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
              </>
            );
@@ -5701,6 +5768,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 wishlistMatchCount={wishlistMatchCount}
                 onUpdateTourElementPosition={updateTourElementPosition}
+                isPro={isPro}
               />
               {/* TourOverlay - liegt über allen Screens (Modal) */}
               {renderTourOverlay()}
@@ -5722,6 +5790,7 @@ useEffect(() => {
                notifications={notifications}
                isLoggedIn={isLoggedIn}
                unreadCount={unreadCount}
+               isPro={isPro}
               />
              </>
            );
@@ -5742,6 +5811,7 @@ useEffect(() => {
                isLoggedIn={isLoggedIn}
                unreadNotifications={unreadCount}
                unreadHints={0}
+               isPro={isPro}
               />
             </>
           );
@@ -5760,6 +5830,7 @@ useEffect(() => {
                 onDeleteNewsletter={deleteNewsletter}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5796,6 +5867,7 @@ useEffect(() => {
                 onTradeAccept={handleTradeAcceptNavigateToForeignCellar}
                 onTradeDecline={({ notification }) => declineTradeRequest({ requestId: notification.requestId, notification })}
                 unreadCount={unreadCount}
+                isPro={isPro}
                />
              </>
            );
@@ -5815,6 +5887,7 @@ useEffect(() => {
                  currentUserId={currentUserId}
                  isLoggedIn={isLoggedIn}
                  unreadCount={unreadCount}
+                 isPro={isPro}
                />
                <BottomNavigation
                  onNavigate={handleNavigate}
@@ -5840,6 +5913,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadNotifications={unreadCount}
                 unreadHints={0}
+                isPro={isPro}
               />
             </>
           );
@@ -5857,6 +5931,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
                 onGetSurveyAnswers={fsGetSurveyAnswers}
+                isPro={isPro}
               />
             </>
           );
@@ -5877,6 +5952,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadNotifications={unreadCount}
                 unreadHints={0}
+                isPro={isPro}
               />
             </>
           );
@@ -5895,6 +5971,7 @@ useEffect(() => {
                 onDeleteHintOnly={deleteHintOnly}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5911,6 +5988,7 @@ useEffect(() => {
                 onDeleteChat={deleteChatById}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5925,6 +6003,7 @@ useEffect(() => {
                 onLogout={handleLogout}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5939,6 +6018,7 @@ useEffect(() => {
                 onLogout={handleLogout}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5953,6 +6033,7 @@ useEffect(() => {
                 onLogout={handleLogout}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5967,8 +6048,34 @@ useEffect(() => {
                 onLogout={handleLogout}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
+          );
+        }
+
+        if (currentScreen === 'admin-wineries') {
+          return (
+            <AdminWineriesScreen
+              onNavigate={handleNavigate}
+              onLogout={handleLogout}
+              isLoggedIn={isLoggedIn}
+              unreadCount={unreadCount}
+              isPro={isPro}
+            />
+          );
+        }
+        
+        if (currentScreen === 'provVersion') {
+          return (
+            <ProVersionScreen
+              onNavigate={handleNavigate}
+              onLogout={handleLogout}
+              isAdmin={isAdmin}
+              isLoggedIn={isLoggedIn}
+              unreadCount={unreadCount}
+              isPro={isPro}
+            />
           );
         }
 
@@ -5985,6 +6092,7 @@ useEffect(() => {
                 onDeleteSystemMessage={deleteSystemMessage}
                 isLoggedIn={isLoggedIn}
                 unreadCount={unreadCount}
+                isPro={isPro}
               />
             </>
           );
@@ -5999,6 +6107,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadNotifications={unreadCount}
                 unreadHints={0}
+                isPro={isPro}
               />
             </>
           );
@@ -6013,6 +6122,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadNotifications={unreadCount}
                 unreadHints={0}
+                isPro={isPro}
               />
             </>
           );
@@ -6033,6 +6143,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 unreadNotifications={unreadCount}
                 unreadHints={0}
+                isPro={isPro}
                />
              </>
            );
@@ -6061,6 +6172,7 @@ useEffect(() => {
                 isLoggedIn={isLoggedIn}
                 onDeclineTradeRequest={({ requestId, otherUserId }) => declineTradeRequestSimple({ requestId, otherUserId })}
                 onMarkAllChatNotificationsAsRead={markAllChatNotificationsAsRead}
+                isPro={isPro}
               />
             </>
           );
@@ -6084,6 +6196,7 @@ useEffect(() => {
                 onDeleteNotificationsForHint={deleteNotificationsForHint}
                 onMarkAllHintNotificationsAsRead={markAllHintNotificationsAsRead}
                 onMarkAllHintsAsRead={markAllHintsAsRead}
+                isPro={isPro}
               />
             </>
           );
@@ -6126,6 +6239,7 @@ useEffect(() => {
                 onUpdateMessage={updateMessage}
                 onMarkChatAsRead={markChatAsRead}
                 isLoggedIn={isLoggedIn}
+                isPro={isPro}
               />
             </>
           );

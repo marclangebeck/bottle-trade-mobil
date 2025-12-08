@@ -5,9 +5,10 @@ import Footer from './Footer';
 import OptimizedImage from './components/OptimizedImage';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
+import ProVersionButton from './components/ProVersionButton';
 import { updateWine } from './services/database-web';
 
-export default function WeinregalEditScreen({ onNavigate, onLogout, wineData, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function WeinregalEditScreen({ onNavigate, onLogout, wineData, isLoggedIn = false, unreadCount = 0, isPro = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [formData, setFormData] = useState({
     wineName: wineData?.name || '',
@@ -276,8 +277,14 @@ export default function WeinregalEditScreen({ onNavigate, onLogout, wineData, is
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

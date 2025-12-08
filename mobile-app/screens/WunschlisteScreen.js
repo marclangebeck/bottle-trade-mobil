@@ -16,6 +16,8 @@ import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
+import LimitInfoBanner from '../components/LimitInfoBanner';
 import { getCurrentUser } from '../services/testAuth';
 import { getUser } from '../services/database-web';
 import {
@@ -27,6 +29,7 @@ import {
   checkWishMatches,
   checkAllWishMatches,
 } from '../services/database-web';
+import { handleLimitError } from '../services/limitErrorHandler';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -47,10 +50,11 @@ export default function WunschlisteScreen({
   onLogout, 
   isAdmin = false, 
   isLoggedIn = false, 
-  unreadNotifications = 0, 
+  unreadCount = 0, 
   unreadHints = 0,
   wishlistMatchCount = 0,
-  onWishlistUpdated = null
+  onWishlistUpdated = null,
+  isPro = false
 }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [userBtp, setUserBtp] = useState(0);
@@ -206,8 +210,17 @@ export default function WunschlisteScreen({
         await updateWish(user.uid, selectedWish.id, wishData);
         Alert.alert('Erfolg', 'Wunsch wurde aktualisiert.');
       } else {
-        await createWish(user.uid, wishData);
-        Alert.alert('Erfolg', 'Wunsch wurde erstellt.');
+        try {
+          await createWish(user.uid, wishData);
+          Alert.alert('Erfolg', 'Wunsch wurde erstellt.');
+        } catch (wishError) {
+          console.error('❌ Fehler beim Erstellen des Wunsches:', wishError);
+          // Prüfe ob es ein Limit-Fehler ist
+          if (handleLimitError(wishError, onNavigate)) {
+            return; // Fehler wurde behandelt
+          }
+          throw wishError; // Weiterwerfen für allgemeine Fehlerbehandlung
+        }
       }
 
       setIsFormModalVisible(false);
@@ -377,7 +390,7 @@ export default function WunschlisteScreen({
         isLoggedIn={true}
         onLogout={onLogout}
         isAdmin={isAdmin}
-        unreadNotifications={unreadNotifications}
+        unreadCount={unreadCount}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -437,6 +450,16 @@ export default function WunschlisteScreen({
           <View style={styles.taglineContainer}>
             <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
+          
+          {/* Limit-Hinweis für Basic-User */}
+          {isLoggedIn && currentUser && currentUser.uid && (
+            <LimitInfoBanner
+              type="wunschliste"
+              userId={currentUser.uid}
+              isPro={isPro}
+              isLoggedIn={isLoggedIn}
+            />
+          )}
           
 {/* Header mit Überschrift */}
         <View style={styles.header}>
@@ -510,8 +533,15 @@ export default function WunschlisteScreen({
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button - links vom FAB positioniert */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+        positionLeft={true}
       />
 
       {/* Formular-Modal */}

@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { collection, getDocs, deleteDoc, doc, query, where, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
@@ -30,7 +31,7 @@ import {
 } from '../services/database-web';
 import { getCurrentUser } from '../services/testAuth';
 
-export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = false, unreadCount = 0, isPro = false }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [users, setUsers] = useState([]);
@@ -48,10 +49,17 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
     try {
       setIsLoading(true);
       const usersSnapshot = await getDocs(collection(db, 'users'));
-      const usersData = usersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const usersData = usersSnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Debug: Log E-Mail-Bestätigungsstatus für jeden User
+        if (data.email) {
+          console.log(`👤 User ${data.email}: emailConfirmed=${data.emailConfirmed}, status=${data.status}`);
+        }
+        return {
+          id: doc.id,
+          ...data
+        };
+      });
       setUsers(usersData);
     } catch (error) {
       console.error('❌ Error loading users:', error);
@@ -204,6 +212,129 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
               Alert.alert('Erfolg', `User wurde ${!isVerified ? 'als Weingut verifiziert' : 'Verifizierung entfernt'}!`);
             } catch (error) {
               console.error('❌ Fehler beim Verifizieren:', error);
+              Alert.alert('Fehler', `User konnte nicht ${action} werden.`);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleToggleSubscription = async (user) => {
+    const currentType = user.subscriptionType || 'basic';
+    const newType = currentType === 'pro' ? 'basic' : 'pro';
+    const action = newType === 'pro' ? 'auf Pro-Version upgraden' : 'auf Basic-Version zurücksetzen';
+    
+    Alert.alert(
+      `Version ${action}`,
+      `Möchten Sie den User "${user.username || user.email}" wirklich ${action}?`,
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        { text: action === 'auf Pro-Version upgraden' ? 'Upgraden' : 'Zurücksetzen', 
+          style: 'default', 
+          onPress: async () => {
+            try {
+              await updateUser(user.uid, {
+                subscriptionType: newType
+              });
+              
+              // Aktualisiere lokalen State
+              setUsers(prev => prev.map(u => 
+                u.id === user.id 
+                  ? { ...u, subscriptionType: newType }
+                  : u
+              ));
+              
+              // Aktualisiere auch userDetailsData wenn Modal offen ist
+              if (userDetailsData && userDetailsData.user.id === user.id) {
+                setUserDetailsData(prev => ({
+                  ...prev,
+                  user: { ...prev.user, subscriptionType: newType }
+                }));
+              }
+              
+              Alert.alert('Erfolg', `User wurde ${newType === 'pro' ? 'auf Pro-Version' : 'auf Basic-Version'} umgestellt!`);
+            } catch (error) {
+              console.error('❌ Fehler beim Umschalten der Version:', error);
+              Alert.alert('Fehler', `Version konnte nicht umgestellt werden.`);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleActivateUser = async (user) => {
+    const isActive = user.isActive || user.status === 'active' || false;
+    const action = isActive ? 'deaktivieren' : 'aktivieren';
+    
+    // Prüfe ob User E-Mail bestätigt hat
+    const emailConfirmed = user.emailConfirmed || false;
+    const status = user.status || 'pending';
+    
+    if (!isActive && !emailConfirmed && status !== 'confirmed') {
+      Alert.alert(
+        'E-Mail noch nicht bestätigt',
+        `Der User "${user.username || user.email}" hat seine E-Mail-Adresse noch nicht bestätigt. Bitte warten Sie auf die E-Mail-Bestätigung, bevor Sie den User aktivieren.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    Alert.alert(
+      `User ${action}`,
+      `Möchten Sie den User "${user.username || user.email}" wirklich ${action}?`,
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        { text: action === 'aktivieren' ? 'Aktivieren' : 'Deaktivieren', 
+          style: action === 'aktivieren' ? 'default' : 'destructive', 
+          onPress: async () => {
+            try {
+              // Update User
+              await updateUser(user.uid, {
+                isActive: !isActive,
+                status: !isActive ? 'active' : 'confirmed' // Wenn deaktiviert, zurück zu 'confirmed'
+              });
+              
+              // Wenn aktiviert wird, sende Aktivierungs-E-Mail
+              if (!isActive) {
+                try {
+                  const axios = require('axios').default;
+                  const { BACKEND_API_URL } = require('../config/api');
+                  
+                  // WICHTIG: Verwende die Firestore Document-ID (user.id), nicht user.uid
+                  // user.id ist die Document-ID in Firestore, die der Backend-Endpoint benötigt
+                  const userId = user.id || user.uid;
+                  console.log(`📧 [APP] Sende Aktivierungs-E-Mail-Request für User-ID: ${userId}`);
+                  console.log(`📧 [APP] User-Daten: uid=${user.uid}, id=${user.id}, email=${user.email}`);
+                  
+                  // Sende Aktivierungs-E-Mail über Backend (user_id als Query-Parameter)
+                  await axios.post(`${BACKEND_API_URL}/auth/send-activation-email?user_id=${userId}`, {}, {
+                    timeout: 10000
+                  }).then(response => {
+                    console.log(`✅ [APP] Aktivierungs-E-Mail-Request erfolgreich:`, response.data);
+                  }).catch(err => {
+                    console.error('⚠️ Fehler beim Senden der Aktivierungs-E-Mail:', err.message || err);
+                    if (err.response) {
+                      console.error('⚠️ Response-Details:', err.response.data);
+                    }
+                    // Fehler nicht weiterwerfen - User wurde bereits aktiviert
+                  });
+                } catch (emailError) {
+                  console.error('⚠️ Fehler beim Senden der Aktivierungs-E-Mail:', emailError);
+                }
+              }
+              
+              // Aktualisiere lokalen State
+              setUsers(prev => prev.map(u => 
+                u.id === user.id 
+                  ? { ...u, isActive: !isActive, status: !isActive ? 'active' : 'confirmed' }
+                  : u
+              ));
+              
+              Alert.alert('Erfolg', `User wurde ${!isActive ? 'aktiviert' : 'deaktiviert'}!`);
+            } catch (error) {
+              console.error('❌ Fehler beim Aktivieren/Deaktivieren:', error);
               Alert.alert('Fehler', `User konnte nicht ${action} werden.`);
             }
           }
@@ -415,7 +546,7 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={true} 
-          unreadNotifications={0}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -498,6 +629,8 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
                     {users.filter(u => u.isBlocked).length > 0 && ` • ${users.filter(u => u.isBlocked).length} Gesperrt`}
                     {users.filter(u => u.isWinery).length > 0 && ` • ${users.filter(u => u.isWinery).length} Weingut(e)`}
                     {users.filter(u => u.isWinery && u.isWineryVerified).length > 0 && ` • ${users.filter(u => u.isWinery && u.isWineryVerified).length} Verifiziert`}
+                    {users.filter(u => !u.isAdmin && (u.isActive || u.status === 'active')).length > 0 && ` • ${users.filter(u => !u.isAdmin && (u.isActive || u.status === 'active')).length} Aktiv`}
+                    {users.filter(u => !u.isAdmin && (!u.isActive && u.status !== 'active')).length > 0 && ` • ${users.filter(u => !u.isAdmin && (!u.isActive && u.status !== 'active')).length} Inaktiv`}
                   </Text>
                 </LinearGradient>
               </View>
@@ -571,44 +704,99 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
                             </Text>
                           </View>
                           <View style={styles.userActions}>
-                            <TouchableOpacity 
-                              style={styles.detailsButton}
-                              onPress={() => loadUserDetails(user)}
-                            >
-                              <Text style={styles.detailsButtonText}>👁️</Text>
-                            </TouchableOpacity>
-                            {user.isWinery && (
+                            {/* Erste Reihe: 3 Buttons */}
+                            <View style={styles.buttonRow}>
                               <TouchableOpacity 
-                                style={[
-                                  styles.verifyButton, 
-                                  user.isWineryVerified && styles.verifyButtonVerified
-                                ]}
-                                onPress={() => handleVerifyWinery(user)}
+                                style={styles.actionButton}
+                                onPress={() => loadUserDetails(user)}
                               >
-                                <Text style={[
-                                  styles.verifyButtonText,
-                                  user.isWineryVerified && styles.verifyButtonTextVerified
-                                ]}>
-                                  {user.isWineryVerified ? '✅' : '⏳'}
-                                </Text>
+                                <Text style={styles.actionButtonText}>👁️ Details</Text>
                               </TouchableOpacity>
+                              {user.isWinery ? (
+                                <TouchableOpacity 
+                                  style={[
+                                    styles.actionButton, 
+                                    user.isWineryVerified && styles.actionButtonVerified
+                                  ]}
+                                  onPress={() => handleVerifyWinery(user)}
+                                >
+                                  <Text style={styles.actionButtonText}>
+                                    {user.isWineryVerified ? '✅ Verifiziert' : '⏳ Verifizieren'}
+                                  </Text>
+                                </TouchableOpacity>
+                              ) : (
+                                <View style={styles.actionButtonPlaceholder} />
+                              )}
+                              {!user.isAdmin ? (
+                                <TouchableOpacity 
+                                  style={[
+                                    styles.actionButton, 
+                                    (user.isActive || user.status === 'active') && styles.actionButtonActive
+                                  ]}
+                                  onPress={() => handleActivateUser(user)}
+                                >
+                                  <Text style={styles.actionButtonText}>
+                                    {(user.isActive || user.status === 'active') ? '✓ Aktiv' : '○ Inaktiv'}
+                                  </Text>
+                                </TouchableOpacity>
+                              ) : (
+                                <View style={styles.actionButtonPlaceholder} />
+                              )}
+                            </View>
+                            {/* Zweite Reihe: 3 Buttons (nur für nicht-Admin User) */}
+                            {!user.isAdmin ? (
+                              <View style={styles.buttonRow}>
+                                <View 
+                                  style={[
+                                    styles.actionButton, 
+                                    (user.emailConfirmed === true || user.emailConfirmed === 'true' || user.status === 'confirmed' || user.status === 'active') && styles.actionButtonConfirmed
+                                  ]}
+                                >
+                                  <Text style={[
+                                    styles.actionButtonText,
+                                    (user.emailConfirmed === true || user.emailConfirmed === 'true' || user.status === 'confirmed' || user.status === 'active') && styles.actionButtonTextConfirmed
+                                  ]}>
+                                    {(user.emailConfirmed === true || user.emailConfirmed === 'true' || user.status === 'confirmed' || user.status === 'active') ? '✓ E-Mail' : '○ E-Mail'}
+                                  </Text>
+                                </View>
+                                <TouchableOpacity 
+                                  style={[styles.actionButton, user.isBlocked && styles.actionButtonUnblock]}
+                                  onPress={() => handleBlockUser(user)}
+                                >
+                                  <Text style={styles.actionButtonText}>
+                                    {user.isBlocked ? '🔓 Entsperren' : '🔒 Sperren'}
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.actionButton,
+                                    user.subscriptionType === 'pro' && styles.actionButtonPro
+                                  ]}
+                                  onPress={() => handleToggleSubscription(user)}
+                                >
+                                  <Text style={styles.actionButtonText}>
+                                    {user.subscriptionType === 'pro' ? '⭐ Pro' : '📦 Basic'}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <View style={styles.buttonRow}>
+                                <View style={styles.actionButtonPlaceholder} />
+                                <View style={styles.actionButtonPlaceholder} />
+                                <View style={styles.actionButtonPlaceholder} />
+                              </View>
                             )}
-                            {!user.isAdmin && (
+                            {/* Dritte Reihe: Löschen-Button (immer vorhanden) */}
+                            <View style={styles.buttonRow}>
+                              <View style={styles.actionButtonPlaceholder} />
                               <TouchableOpacity 
-                                style={[styles.blockButton, user.isBlocked && styles.unblockButton]}
-                                onPress={() => handleBlockUser(user)}
+                                style={styles.actionButtonDelete}
+                                onPress={() => handleDeleteUser(user)}
                               >
-                                <Text style={[styles.blockButtonText, user.isBlocked && styles.unblockButtonText]}>
-                                  {user.isBlocked ? '🔓' : '🔒'}
-                                </Text>
+                                <Text style={styles.actionButtonTextDelete}>🗑️ Löschen</Text>
                               </TouchableOpacity>
-                            )}
-                            <TouchableOpacity 
-                              style={styles.deleteButton}
-                              onPress={() => handleDeleteUser(user)}
-                            >
-                              <Text style={styles.deleteButtonText}>🗑️</Text>
-                            </TouchableOpacity>
+                              <View style={styles.actionButtonPlaceholder} />
+                            </View>
                           </View>
                         </View>
                       </LinearGradient>
@@ -624,8 +812,14 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
       
       {/* User-Details Modal */}
@@ -701,6 +895,12 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
                       {userDetailsData.user.isBlocked && ' • 🚫 Gesperrt'}
                       {userDetailsData.user.isWinery && ' • 🏰 Weingut'}
                       {userDetailsData.user.isWineryVerified && ' • ✅ Verifiziert'}
+                    </Text>
+                  </View>
+                  <View style={styles.detailsRow}>
+                    <Text style={styles.detailsLabel}>Version:</Text>
+                    <Text style={styles.detailsValue}>
+                      {userDetailsData.user.subscriptionType === 'pro' ? '⭐ Pro' : '📦 Basic'}
                     </Text>
                   </View>
                 </View>
@@ -1181,14 +1381,13 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     overflow: 'hidden',
+    minHeight: 180,
   },
   userHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
   },
   userInfo: {
-    flex: 1,
+    marginBottom: 15,
   },
   userNameRow: {
     flexDirection: 'row',
@@ -1227,9 +1426,74 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
   userActions: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  buttonRow: {
     flexDirection: 'row',
     gap: 8,
+    marginBottom: 8,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1.5,
+    borderColor: '#9E9E9E',
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  actionButtonPlaceholder: {
+    flex: 1,
+    minHeight: 40,
+  },
+  actionButtonText: {
+    color: '#333333',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  actionButtonActive: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#E8F5E9',
+  },
+  actionButtonVerified: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#E8F5E9',
+  },
+  actionButtonConfirmed: {
+    borderColor: '#2196F3',
+    backgroundColor: '#E3F2FD',
+  },
+  actionButtonTextConfirmed: {
+    color: '#2196F3',
+  },
+  actionButtonUnblock: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#E8F5E9',
+  },
+  actionButtonPro: {
+    borderColor: '#DC143C',
+    backgroundColor: '#FFE4E1',
+  },
+  actionButtonDelete: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1.5,
+    borderColor: '#F44336',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  actionButtonTextDelete: {
+    color: '#F44336',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   blockButton: {
     backgroundColor: '#F8F9FA',
@@ -1294,6 +1558,47 @@ const styles = StyleSheet.create({
   verifyButtonTextVerified: {
     color: '#4CAF50',
   },
+  activateButton: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1.5,
+    borderColor: '#9E9E9E',
+    marginRight: 8,
+  },
+  activateButtonActive: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#E8F5E9',
+  },
+  activateButtonText: {
+    color: '#9E9E9E',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  activateButtonTextActive: {
+    color: '#4CAF50',
+  },
+  emailConfirmButton: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1.5,
+    borderColor: '#9E9E9E',
+    marginRight: 8,
+    // Nicht klickbar - nur Anzeige
+  },
+  emailConfirmButtonConfirmed: {
+    borderColor: '#2196F3',
+    backgroundColor: '#E3F2FD',
+  },
+  emailConfirmButtonText: {
+    color: '#9E9E9E',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emailConfirmButtonTextConfirmed: {
+    color: '#2196F3',
+  },
   deleteButton: {
     backgroundColor: '#F8F9FA',
     borderRadius: 8,
@@ -1303,6 +1608,21 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     color: '#F44336',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  subscriptionToggleButton: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1.5,
+    borderColor: '#9E9E9E',
+  },
+  subscriptionToggleButtonPro: {
+    borderColor: '#DC143C',
+    backgroundColor: '#FFE4E1',
+  },
+  subscriptionToggleButtonText: {
     fontSize: 16,
     fontWeight: '600',
   },
@@ -1423,9 +1743,25 @@ const styles = StyleSheet.create({
   detailsValue: {
     fontSize: 14,
     color: '#FFFFFF',
-    flex: 2,
-    textAlign: 'right',
+    flex: 1,
+    textAlign: 'left',
     opacity: 0.85,
+    marginRight: 10,
+  },
+  toggleButton: {
+    backgroundColor: '#DAA520',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginLeft: 10,
+  },
+  toggleButtonPro: {
+    backgroundColor: '#4CAF50',
+  },
+  toggleButtonText: {
+    color: '#2c2c2c',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   statsGrid: {
     flexDirection: 'row',

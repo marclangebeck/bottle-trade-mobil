@@ -111,6 +111,21 @@ export const loginUser = async (emailOrUsername, password, rememberMe = false) =
       throw new Error('Ungültige Anmeldedaten. Bitte prüfen Sie E-Mail/Username und Passwort.');
     }
     
+    // Prüfe ob User aktiviert ist (nur für nicht-Admin-User)
+    if (!user.isAdmin) {
+      const isActive = user.isActive || user.status === 'active' || false;
+      if (!isActive) {
+        const status = user.status || 'pending';
+        if (status === 'pending') {
+          throw new Error('Ihr Konto wurde noch nicht aktiviert. Bitte bestätigen Sie zuerst Ihre E-Mail-Adresse.');
+        } else if (status === 'confirmed') {
+          throw new Error('Ihr Konto wartet noch auf Freischaltung durch einen Admin. Sie erhalten eine E-Mail, sobald Ihr Konto aktiviert wurde.');
+        } else {
+          throw new Error('Ihr Konto ist derzeit nicht aktiv. Bitte kontaktieren Sie den Support.');
+        }
+      }
+    }
+    
     // Aktuellen User setzen (nur für Session-Management)
     currentLoggedInUser = user;
     
@@ -142,7 +157,10 @@ export const loginUser = async (emailOrUsername, password, rememberMe = false) =
     // Wenn es bereits eine benutzerfreundliche Fehlermeldung ist, weiterwerfen
     if (error.message && (
       error.message.includes('Keine Verbindung') ||
-      error.message.includes('Ungültige Anmeldedaten')
+      error.message.includes('Ungültige Anmeldedaten') ||
+      error.message.includes('noch nicht aktiviert') ||
+      error.message.includes('wartet noch auf Freischaltung') ||
+      error.message.includes('nicht aktiv')
     )) {
       throw error;
     }
@@ -167,7 +185,25 @@ export const registerUser = async (email, password, userData) => {
       }
     }
     
-    // Neuen User erstellen
+    // Generiere Bestätigungs-Token
+    const generateToken = () => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let token = '';
+      for (let i = 0; i < 32; i++) {
+        token += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return token;
+    };
+    const confirmationToken = generateToken();
+    
+    // Bestätigungs-URL erstellen (Deep Link zur App)
+    const { BACKEND_API_URL } = require('../config/api');
+    // Deep Link zur App (funktioniert auf iOS und Android)
+    const confirmationUrl = `bottletrade://confirm-email?token=${confirmationToken}`;
+    // Fallback: Web-URL (falls Deep Link nicht funktioniert)
+    const webConfirmationUrl = `https://bottle-trade.de/confirm?token=${confirmationToken}`;
+    
+    // Neuen User erstellen (Status: pending, E-Mail nicht bestätigt)
     const newUser = {
       uid: `user-${Date.now()}`,
       email: email,
@@ -177,27 +213,96 @@ export const registerUser = async (email, password, userData) => {
       profilePublic: true,
       newsletter: true,
       adFree: false,
-      wishlist: false
+      wishlist: false,
+      status: 'pending', // pending -> confirmed -> active
+      emailConfirmed: false,
+      emailConfirmationToken: confirmationToken,
+      isActive: false // Wird vom Admin aktiviert
     };
     
     // User-Profil in Firestore erstellen
     const userId = await createUser(newUser);
     
-    // Aktuellen User setzen (automatischer Login nach Registrierung)
-    currentLoggedInUser = newUser;
+    // KEIN automatischer Login nach Registrierung - User muss erst E-Mail bestätigen und Admin muss freischalten
+    // currentLoggedInUser = null;
     
-    // Admins über neue Registrierung benachrichtigen (asynchron, blockiert nicht die Registrierung)
+    // E-Mails senden (über Backend API)
+    try {
+      const axios = require('axios').default;
+      const { BACKEND_API_URL } = require('../config/api');
+      
+      // 1. Bestätigungs-E-Mail an User senden
+      console.log(`📤 [APP] Sende Registrierungs-E-Mail-Request an: ${BACKEND_API_URL}/auth/send-registration-email`);
+      const emailStartTime = Date.now();
+      await axios.post(`${BACKEND_API_URL}/auth/send-registration-email`, {
+        userEmail: email,
+        username: userData.username || email,
+        firstName: userData.firstName || '',
+        lastName: userData.lastName || '',
+        confirmationToken: confirmationToken,
+        confirmationUrl: confirmationUrl, // Deep Link zur App
+        webConfirmationUrl: webConfirmationUrl // Fallback Web-URL
+      }, {
+        timeout: 10000 // 10 Sekunden Timeout (sollte ausreichen, da Backend sofort antwortet)
+      }).catch(err => {
+        if (err.code === 'ECONNREFUSED' || err.message.includes('Network Error')) {
+          console.warn('⚠️ Backend-API nicht erreichbar. E-Mail wird nicht gesendet. Backend muss gestartet werden:');
+          console.warn(`   cd backend-api && uvicorn main:app --reload --host 0.0.0.0 --port 8000`);
+          console.warn(`   Oder prüfe BACKEND_API_URL in config/api.js (aktuell: ${BACKEND_API_URL})`);
+        } else if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          console.warn('⚠️ Timeout beim Senden der Registrierungs-E-Mail. E-Mail wird trotzdem im Hintergrund versendet.');
+        } else {
+          console.error('⚠️ Fehler beim Senden der Registrierungs-E-Mail:', err.message || err);
+        }
+        // Fehler nicht weiterwerfen, damit Registrierung nicht fehlschlägt
+        // User wurde bereits erstellt, E-Mail kann später manuell gesendet werden
+      });
+      
+      // 2. Benachrichtigung an Admin senden
+      console.log(`📤 [APP] Sende Admin-Benachrichtigungs-Request an: ${BACKEND_API_URL}/auth/notify-admin-new-user`);
+      const adminStartTime = Date.now();
+      await axios.post(`${BACKEND_API_URL}/auth/notify-admin-new-user`, {
+        userEmail: email,
+        username: userData.username || email,
+        firstName: userData.firstName || '',
+        lastName: userData.lastName || ''
+      }, {
+        timeout: 10000 // 10 Sekunden Timeout (sollte ausreichen, da Backend sofort antwortet)
+      }).then(response => {
+        const adminDuration = Date.now() - adminStartTime;
+        console.log(`✅ [APP] Admin-Benachrichtigungs-Request erfolgreich (Dauer: ${adminDuration}ms):`, response.data);
+      }).catch(err => {
+        const adminDuration = Date.now() - adminStartTime;
+        console.error(`❌ [APP] Admin-Benachrichtigungs-Request fehlgeschlagen (Dauer: ${adminDuration}ms):`, err.message || err);
+        if (err.code === 'ECONNREFUSED' || err.message.includes('Network Error')) {
+          console.warn('⚠️ Backend-API nicht erreichbar. Admin-Benachrichtigung wird nicht gesendet.');
+        } else if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          console.warn('⚠️ Timeout beim Senden der Admin-Benachrichtigung. E-Mail wird trotzdem im Hintergrund versendet.');
+        } else {
+          console.error('⚠️ Fehler beim Benachrichtigen des Admins:', err.message || err);
+        }
+        // Fehler nicht weiterwerfen
+      });
+      
+    } catch (emailError) {
+      console.error('⚠️ Fehler beim Senden der E-Mails:', emailError);
+      // Fehler nicht weiterwerfen, damit Registrierung nicht fehlschlägt
+      // Aber: User wurde bereits erstellt, also müssen wir die Registrierung als erfolgreich betrachten
+    }
+    
+    // Admins über neue Registrierung benachrichtigen (in-App Notification)
     notifyAdminsAboutNewRegistration(newUser.uid, newUser.username, newUser.email)
       .catch(error => {
-        console.error('⚠️ Fehler beim Benachrichtigen der Admins:', error);
-        // Fehler wird ignoriert, damit Registrierung nicht fehlschlägt
+        console.error('⚠️ Fehler beim Benachrichtigen der Admins (Notification):', error);
+        // Fehler wird ignoriert
       });
     
     return {
       uid: newUser.uid,
       email: newUser.email,
-      emailVerified: true,
-      profileId: userId
+      emailVerified: false, // E-Mail noch nicht bestätigt
+      profileId: userId,
+      status: 'pending'
     };
     
   } catch (error) {

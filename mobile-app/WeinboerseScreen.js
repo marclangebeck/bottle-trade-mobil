@@ -18,10 +18,13 @@ import OptimizedImage from './components/OptimizedImage';
 import Footer from './Footer';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
+import ProVersionButton from './components/ProVersionButton';
+import LimitInfoBanner from './components/LimitInfoBanner';
 import { getAvailableWines, unpublishWine, publishWine } from './data/mockData';
 import { getCurrentUser } from './services/testAuth';
 import { getAllWinesByOwner, getUser, updateWine } from './services/database-web';
 import { getDistanceText } from './services/geocodingService';
+import { handleLimitError } from './services/limitErrorHandler';
 
 // Hilfsfunktion für Initialen
 const getInitials = (user) => {
@@ -35,7 +38,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, chats = [], isLoggedIn = false, onCreateTradeRequest = null, wishlistMatchCount = 0 }) {
+export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, chats = [], isLoggedIn = false, onCreateTradeRequest = null, wishlistMatchCount = 0, isPro = false }) {
   const [wines, setWines] = useState([]);
   const [allWines, setAllWines] = useState([]); // Alle Weine inkl. private für Status-Prüfung
   const [isLoading, setIsLoading] = useState(true);
@@ -53,6 +56,7 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
   const [viewMode, setViewMode] = useState('container'); // 'container' oder 'list'
   const [searchText, setSearchText] = useState(''); // Suchtext für Filterung
   const [showMyWines, setShowMyWines] = useState(true); // Eigene Weine anzeigen/ausblenden
+  const [modalScrollViewWidth, setModalScrollViewWidth] = useState(null); // Breite der ScrollView für pagingEnabled
   
   // Admin-Status wird von App.js übergeben
   console.log('🔍 WeinboerseScreen: Admin-Status:', isAdmin ? 'Admin' : 'Standard-User');
@@ -221,12 +225,15 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
     // Öffne Modal mit Wein-Details
     setSelectedWine(wine);
     setCurrentImageIndex(0); // Reset auf erstes Bild
+    setModalScrollViewWidth(null); // Reset ScrollView-Breite (wird beim onLayout neu gemessen)
     setIsModalVisible(true);
   };
 
   const handleCloseModal = () => {
     setIsModalVisible(false);
     setSelectedWine(null);
+    setCurrentImageIndex(0); // Reset auf erstes Bild
+    setModalScrollViewWidth(null); // Reset ScrollView-Breite
   };
 
   const handleTradeRequest = () => {
@@ -467,13 +474,29 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
       
       if (publishMode === 'publish') {
         // Veröffentlichen
-        for (const id of winesToAction) {
-          await publishWine(id, currentUserId);
+        try {
+          for (const id of winesToAction) {
+            await publishWine(id, currentUserId);
+          }
+          
+          Alert.alert('Erfolg', count > 1 
+            ? `${count} Flaschen von "${wine.name}" wurden in der Weinbörse veröffentlicht!`
+            : `"${wine.name}" wurde in der Weinbörse veröffentlicht!`);
+          
+          setPublishModalVisible(false);
+          setSelectedWineForPublish(null);
+          setPublishCount(1);
+          setPublishMode('publish');
+          loadWines(); // Weine neu laden
+          loadAllWines(); // Alle Weine neu laden
+        } catch (error) {
+          console.error('Error publishing wines:', error);
+          // Prüfe ob es ein Limit-Fehler ist
+          if (handleLimitError(error, onNavigate)) {
+            return; // Fehler wurde behandelt
+          }
+          Alert.alert('Fehler', `Weine konnten nicht veröffentlicht werden: ${error.message || 'Unbekannter Fehler'}`);
         }
-        
-        Alert.alert('Erfolg', count > 1 
-          ? `${count} Flaschen von "${wine.name}" wurden in der Weinbörse veröffentlicht!`
-          : `"${wine.name}" wurde in der Weinbörse veröffentlicht!`);
       } else {
         // Zurückziehen
         for (const id of winesToAction) {
@@ -483,14 +506,14 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
         Alert.alert('Erfolg', count > 1 
           ? `${count} Flaschen von "${wine.name}" wurden aus der Weinbörse zurückgezogen.`
           : `"${wine.name}" wurde aus der Weinbörse zurückgezogen.`);
+        
+        setPublishModalVisible(false);
+        setSelectedWineForPublish(null);
+        setPublishCount(1);
+        setPublishMode('publish');
+        loadWines(); // Weine neu laden
+        loadAllWines(); // Alle Weine neu laden
       }
-      
-      setPublishModalVisible(false);
-      setSelectedWineForPublish(null);
-      setPublishCount(1);
-      setPublishMode('publish');
-      loadWines(); // Weine neu laden
-      loadAllWines(); // Alle Weine neu laden
     } catch (error) {
       console.error(`Error ${publishMode === 'publish' ? 'publishing' : 'unpublishing'} wines:`, error);
       Alert.alert('Fehler', `Weine konnten nicht ${publishMode === 'publish' ? 'veröffentlicht' : 'zurückgezogen'} werden.`);
@@ -582,6 +605,16 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
           <View style={styles.taglineContainer}>
             <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
+          
+          {/* Limit-Hinweis für Basic-User */}
+          {isLoggedIn && currentUserId && (
+            <LimitInfoBanner
+              type="weinboerse"
+              userId={currentUserId}
+              isPro={isPro}
+              isLoggedIn={isLoggedIn}
+            />
+          )}
           
           {/* Header mit Überschrift */}
           <View style={styles.header}>
@@ -887,6 +920,13 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
         isLoggedIn={isLoggedIn}
         unreadCount={unreadCount}
       />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
 
       {/* Modal für Wein-Details */}
       <Modal
@@ -921,7 +961,6 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
                         </View>
                       );
                     }
-                    const screenWidth = Dimensions.get('window').width;
                     return (
                       <>
                         <ScrollView
@@ -930,21 +969,54 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
                           showsHorizontalScrollIndicator={false}
                           style={styles.modalImageSwipeContainer}
                           contentContainerStyle={styles.modalImageSwipeContent}
+                          onLayout={(event) => {
+                            // Messen der ScrollView-Breite für pagingEnabled
+                            const { width } = event.nativeEvent.layout;
+                            if (width > 0 && width !== modalScrollViewWidth) {
+                              console.log('📏 Modal ScrollView Breite gemessen:', width);
+                              setModalScrollViewWidth(width);
+                            }
+                          }}
                           onScroll={(event) => {
                             const offsetX = event.nativeEvent.contentOffset.x;
-                            const index = Math.round(offsetX / event.nativeEvent.layoutMeasurement.width);
-                            setCurrentImageIndex(index);
+                            const scrollViewWidth = event.nativeEvent.layoutMeasurement.width;
+                            if (scrollViewWidth > 0) {
+                              const index = Math.round(offsetX / scrollViewWidth);
+                              setCurrentImageIndex(Math.max(0, Math.min(index, images.length - 1)));
+                            }
+                          }}
+                          onMomentumScrollEnd={(event) => {
+                            // Zusätzliche Berechnung beim Ende des Scrolls für bessere Genauigkeit
+                            const offsetX = event.nativeEvent.contentOffset.x;
+                            const scrollViewWidth = event.nativeEvent.layoutMeasurement.width;
+                            if (scrollViewWidth > 0) {
+                              const index = Math.round(offsetX / scrollViewWidth);
+                              setCurrentImageIndex(Math.max(0, Math.min(index, images.length - 1)));
+                            }
                           }}
                           scrollEventThrottle={16}
                         >
-                          {images.map((imageUri, index) => (
-                            <OptimizedImage
-                              key={index}
-                              source={{ uri: imageUri }}
-                              style={[styles.modalImage, { width: screenWidth }]}
-                              resizeMode="cover"
-                            />
-                          ))}
+                          {images.map((imageUri, index) => {
+                            // Verwende gemessene Breite oder fallback zu 100%
+                            const itemWidth = modalScrollViewWidth || '100%';
+                            console.log(`🖼️ Rendering Bild ${index + 1}/${images.length}:`, imageUri?.substring(0, 50) + '...', 'Breite:', itemWidth);
+                            
+                            return (
+                              <View 
+                                key={index} 
+                                style={[
+                                  styles.modalImageWrapper,
+                                  typeof itemWidth === 'number' ? { width: itemWidth } : {}
+                                ]}
+                              >
+                                <OptimizedImage
+                                  source={{ uri: imageUri }}
+                                  style={styles.modalImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            );
+                          })}
                         </ScrollView>
                         {images.length > 1 && (
                           <View style={styles.imageIndicatorContainer}>
@@ -1737,10 +1809,22 @@ const styles = StyleSheet.create({
   modalImageContainer: {
     width: '100%',
     height: 250,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'transparent',
+    overflow: 'hidden', // Verhindert Überlauf
+    position: 'relative', // Für absolute Positionierung des Indikators
+  },
+  modalImageWrapper: {
+    height: 250,
+    // width wird dynamisch gesetzt (feste Pixel-Breite für pagingEnabled)
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    flexShrink: 0, // Verhindert, dass Items schrumpfen
+    overflow: 'hidden', // Verhindert Überlauf
   },
   modalImage: {
-    height: '100%',
+    width: '100%',
+    height: 250,
   },
   modalPlaceholderImage: {
     width: '100%',
@@ -2083,5 +2167,30 @@ const styles = StyleSheet.create({
   },
   showMyWinesButtonText: {
     fontSize: 18,
+  },
+  modalImageSwipeContainer: {
+    width: '100%',
+    height: 250,
+    overflow: 'hidden', // Verhindert Überlauf
+  },
+  modalImageSwipeContent: {
+    // Bei pagingEnabled sollten Items direkt nebeneinander liegen, ohne Zentrierung
+    // Die Zentrierung erfolgt durch die Items selbst (modalImageWrapper)
+    flexDirection: 'row', // Explizit horizontal
+  },
+  imageIndicatorContainer: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    zIndex: 10,
+  },
+  imageIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

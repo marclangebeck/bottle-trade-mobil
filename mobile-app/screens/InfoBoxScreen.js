@@ -32,6 +32,7 @@ import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { archiveNotification, markNotificationAsCompleted, markNotificationAsRead } from '../services/notificationService';
 import { subscribeNotificationsForUser } from '../services/notificationService';
 import { getCurrentUser } from '../services/testAuth';
@@ -51,7 +52,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notifications = [], chats = [], currentUserId, isLoggedIn = false, unreadCount = 0, onDeclineTradeRequest = null }) {
+export default function InfoBoxScreen({ onNavigate, onLogout, notifications = [], chats = [], currentUserId, isLoggedIn = false, isAdmin = false, unreadCount = 0, onDeclineTradeRequest = null, isPro = false }) {
   // PHASE 5: Starte mit leerem Array - Subscription lädt alle Notifications (inklusive gelesene)
   const [allNotifications, setAllNotifications] = useState([]);
   const [combinedEntries, setCombinedEntries] = useState([]); // Kombiniert Notifications und Chats
@@ -1429,6 +1430,7 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
           onNavigate={onNavigate || (() => {})} 
           isLoggedIn={isLoggedIn} 
           onLogout={onLogout} 
+          isAdmin={isAdmin}
           unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
@@ -1585,6 +1587,15 @@ export default function InfoBoxScreen({ onNavigate, onLogout = () => {}, notific
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
         unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      {/* ProVersion Button - links vom FAB positioniert */}
+      <ProVersionButton
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+        positionLeft={true}
       />
 
       {/* Hint-Modal für hint-small Notifications */}

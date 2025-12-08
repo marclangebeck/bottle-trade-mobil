@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { getCurrentUser } from '../services/testAuth';
 import { 
   getUser, 
@@ -22,7 +23,7 @@ import {
 import { cacheProfileImage, getCachedProfileImage, clearCachedProfileImage } from '../services/profileImageCache';
 import * as ImagePicker from 'expo-image-picker';
 
-export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, isLoggedIn = false, unreadCount = 0, currentUser = null }) {
+export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, isLoggedIn = false, unreadCount = 0, currentUser = null, isPro = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -1267,6 +1268,13 @@ export default function ProfilScreen({ onNavigate, onLogout, isAdmin = false, is
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
         unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

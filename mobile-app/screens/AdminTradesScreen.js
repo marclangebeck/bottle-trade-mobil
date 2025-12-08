@@ -12,13 +12,14 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { collection, getDocs, query, orderBy, deleteDoc, doc, writeBatch, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
 import { deleteTradeRequest, deleteNotificationsForTradeRequest, deleteNotificationsForChat, deleteNotificationsForHint } from '../services/database-web';
 import { getCurrentUser } from '../services/testAuth';
 
-export default function AdminTradesScreen({ onNavigate, onLogout, chats = [], onDeleteSingleTrade = null, onDeleteChatOnly = null, onDeleteHintOnly = null, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminTradesScreen({ onNavigate, onLogout, chats = [], onDeleteSingleTrade = null, onDeleteChatOnly = null, onDeleteHintOnly = null, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [allTrades, setAllTrades] = useState([]);
@@ -545,7 +546,7 @@ export default function AdminTradesScreen({ onNavigate, onLogout, chats = [], on
         isLoggedIn={true} 
         onLogout={onLogout} 
         isAdmin={true} 
-        unreadNotifications={unreadNotifications}
+        unreadCount={unreadCount}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -667,8 +668,14 @@ export default function AdminTradesScreen({ onNavigate, onLogout, chats = [], on
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

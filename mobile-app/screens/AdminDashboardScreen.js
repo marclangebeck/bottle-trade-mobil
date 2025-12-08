@@ -14,6 +14,7 @@ import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { collection, getDocs, query, where, doc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,9 +28,8 @@ export default function AdminDashboardScreen({
   systemMessages = [],
   notifications = [],
   isLoggedIn = false,
-  unreadNotifications = 0,
-  unreadHints = 0,
-}) {
+  unreadCount = 0,
+}, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [activeUsers, setActiveUsers] = useState(0);
   const [winesInBoerse, setWinesInBoerse] = useState(0);
@@ -162,6 +162,14 @@ export default function AdminDashboardScreen({
       bgColor: '#ECEFF1' // Hellgrau
     },
     {
+      id: 'wineries',
+      title: 'Weingüter-Verwaltung',
+      description: 'Weingüter verwalten und verwaiste löschen',
+      icon: '🏰',
+      color: '#DAA520',
+      bgColor: '#FFF8DC' // Gold/Gelb
+    },
+    {
       id: 'wine-ki',
       title: 'Weinregal KI',
       description: 'Weinregal mit KI-Analyse befüllen',
@@ -265,6 +273,9 @@ export default function AdminDashboardScreen({
         break;
       case 'users':
         onNavigate('admin-users');
+        break;
+      case 'wineries':
+        onNavigate('admin-wineries');
         break;
       case 'wine-ki':
         onNavigate('weinregal-ki');
@@ -807,8 +818,7 @@ export default function AdminDashboardScreen({
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={true} 
-          unreadNotifications={unreadNotifications}
-          unreadHints={unreadHints}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -1032,8 +1042,14 @@ export default function AdminDashboardScreen({
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

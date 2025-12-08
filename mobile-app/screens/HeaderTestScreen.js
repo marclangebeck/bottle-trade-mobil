@@ -10,6 +10,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { getCurrentUser } from '../services/testAuth';
 import { getUser } from '../services/database-web';
@@ -26,7 +27,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function HeaderTestScreen({ onNavigate, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function HeaderTestScreen({ onNavigate, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
 
@@ -66,7 +67,7 @@ export default function HeaderTestScreen({ onNavigate, isLoggedIn = false, unrea
           isLoggedIn={isLoggedIn} 
           onLogout={() => {}} 
           isAdmin={true} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -542,8 +543,14 @@ export default function HeaderTestScreen({ onNavigate, isLoggedIn = false, unrea
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

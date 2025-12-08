@@ -10,6 +10,7 @@ export default function OptimizedImage({
 }) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [imageDimensions, setImageDimensions] = useState(null);
 
   useEffect(() => {
     // Für lokale Assets (require) - sofort laden, kein Delay
@@ -77,10 +78,39 @@ export default function OptimizedImage({
     );
   }
 
+  // Extrahiere Zentrierungs-Eigenschaften vom Style
+  const styleObj = Array.isArray(style) ? Object.assign({}, ...style.filter(s => s)) : (style || {});
+  const { justifyContent, alignItems, width, height, backgroundColor, ...imageStyleProps } = styleObj;
+  
+  // Container-Style: Feste Dimensionen, zentriert
+  // WICHTIG: backgroundColor wird NICHT übernommen, da der Container transparent sein soll
+  const containerStyle = {
+    width: width || '100%',
+    height: height || 250,
+    justifyContent: 'center',  // Immer zentrieren
+    alignItems: 'center',       // Immer zentrieren
+    backgroundColor: 'transparent', // Immer transparent, damit Bilder sichtbar sind
+  };
+  
+  // Image-Style: Bei "contain" sollte das Image die Container-Dimensionen haben
+  // resizeMode="contain" sorgt dafür, dass der Bildinhalt zentriert ist
+  // WICHTIG: resizeMode="contain" zentriert den Bildinhalt automatisch,
+  // aber das Image-Element selbst muss die Container-Dimensionen haben
+  const imageStyle = resizeMode === 'contain' ? {
+    width: width || '100%',
+    height: height || 250,
+    opacity: isLoading ? 0 : 1,
+  } : {
+    ...imageStyleProps,
+    width: width || '100%',
+    height: height || 250,
+    opacity: isLoading ? 0 : 1,
+  };
+
   return (
-    <View style={style}>
+    <View style={containerStyle}>
       {isLoading && (
-        <View style={[style, { 
+        <View style={[containerStyle, { 
           position: 'absolute', 
           justifyContent: 'center', 
           alignItems: 'center',
@@ -92,14 +122,24 @@ export default function OptimizedImage({
       )}
       <Image
         source={source}
-        style={[style, { opacity: isLoading ? 0 : 1 }]}
+        style={imageStyle}
         resizeMode={resizeMode}
         fadeDuration={0}
         defaultSource={source} // Für lokale Assets - sofort anzeigen
-        onLoad={() => {
+        onLoad={(event) => {
           setIsLoading(false);
+          console.log('✅ Bild erfolgreich geladen:', source?.uri?.substring(0, 50) || 'lokales Asset');
+          // Optional: Bilddimensionen speichern für zukünftige Verwendung
+          if (event.nativeEvent?.source?.width && event.nativeEvent?.source?.height) {
+            setImageDimensions({
+              width: event.nativeEvent.source.width,
+              height: event.nativeEvent.source.height,
+            });
+            console.log('📐 Bild-Dimensionen:', event.nativeEvent.source.width, 'x', event.nativeEvent.source.height);
+          }
         }}
         onLoadStart={() => {
+          console.log('🔄 Bild-Loading gestartet:', source?.uri?.substring(0, 50) || 'lokales Asset');
           // Für lokale Assets sollte onLoadStart sofort aufgerufen werden
           if (source && typeof source === 'object' && source.uri === undefined) {
             setIsLoading(false);
@@ -107,6 +147,7 @@ export default function OptimizedImage({
         }}
         onError={(error) => {
           console.warn('⚠️ Fehler beim Laden des Bildes:', source?.uri || source);
+          console.warn('⚠️ Fehler-Details:', error);
           setHasError(true);
         }}
         {...props}

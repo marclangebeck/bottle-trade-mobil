@@ -18,6 +18,8 @@ import OptimizedImage from './components/OptimizedImage';
 import Footer from './Footer';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
+import ProVersionButton from './components/ProVersionButton';
+import LimitInfoBanner from './components/LimitInfoBanner';
 import { getWinesByOwner, deleteWine, publishWine, unpublishWine } from './data/mockData';
 import { addWine } from './services/database-web';
 import { getAllWinesByOwner, getUser } from './services/database-web';
@@ -35,7 +37,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false, viewUserId = null, tradeRequestId = null, onSelectTradeWine = null, onDeclineTradeRequest = null, wishlistMatchCount = 0 }) {
+export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false, viewUserId = null, tradeRequestId = null, onSelectTradeWine = null, onDeclineTradeRequest = null, wishlistMatchCount = 0, isPro = false }) {
   const [wines, setWines] = useState([]);
   const [allWines, setAllWines] = useState([]); // Alle Weine inkl. getauschter Weine für Flaschenzählung
   const [currentUserId, setCurrentUserId] = useState('');
@@ -55,6 +57,8 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
   const itemHeight = 50;
   const [selectedWine, setSelectedWine] = useState(null); // Für Modal
   const [isModalVisible, setIsModalVisible] = useState(false); // Modal sichtbar
+  const [currentImageIndex, setCurrentImageIndex] = useState(0); // Für Swipe-Galerie
+  const [modalScrollViewWidth, setModalScrollViewWidth] = useState(null); // Breite der ScrollView für pagingEnabled
   const lastLoadedOwnerIdRef = useRef(null); // Verhindert mehrfaches Laden für denselben Owner
   const [viewMode, setViewMode] = useState('container'); // 'container' oder 'list'
   const [searchText, setSearchText] = useState(''); // Suchtext für Filterung
@@ -594,12 +598,16 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
   const handleWineImagePress = (wine) => {
     // Öffne Modal mit Wein-Details
     setSelectedWine(wine);
+    setCurrentImageIndex(0); // Reset auf erstes Bild
+    setModalScrollViewWidth(null); // Reset ScrollView-Breite (wird beim onLayout neu gemessen)
     setIsModalVisible(true);
   };
 
   const handleCloseModal = () => {
     setIsModalVisible(false);
     setSelectedWine(null);
+    setCurrentImageIndex(0); // Reset auf erstes Bild
+    setModalScrollViewWidth(null); // Reset ScrollView-Breite
   };
 
   const handleModalEdit = () => {
@@ -703,6 +711,16 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
           <View style={styles.taglineContainer}>
             <Text style={styles.taglineText}>Tausch dich durch die Welt der Weine.</Text>
           </View>
+          
+          {/* Limit-Hinweis für Basic-User (nur für eigenes Regal) */}
+          {isLoggedIn && currentUserId && !viewingOtherUserId && (
+            <LimitInfoBanner
+              type="weinregal"
+              userId={currentUserId}
+              isPro={isPro}
+              isLoggedIn={isLoggedIn}
+            />
+          )}
           
           {/* Header mit Überschrift */}
           <View style={styles.header}>
@@ -1030,6 +1048,13 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
         isLoggedIn={isLoggedIn}
         unreadCount={unreadCount}
       />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
 
       {/* Modal für Wein-Details */}
       <Modal
@@ -1064,24 +1089,71 @@ export default function MeinWeinregalScreen({ onNavigate, onLogout, isAdmin = fa
                         </View>
                       );
                     }
-                    const screenWidth = Dimensions.get('window').width;
                     return (
-                      <ScrollView
-                        horizontal
-                        pagingEnabled
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.modalImageSwipeContainer}
-                        contentContainerStyle={styles.modalImageSwipeContent}
-                      >
-                        {images.map((imageUri, index) => (
-                          <OptimizedImage
-                            key={index}
-                            source={{ uri: imageUri }}
-                            style={[styles.modalImage, { width: screenWidth }]}
-                            resizeMode="cover"
-                          />
-                        ))}
-                      </ScrollView>
+                      <>
+                        <ScrollView
+                          horizontal
+                          pagingEnabled
+                          showsHorizontalScrollIndicator={false}
+                          style={styles.modalImageSwipeContainer}
+                          contentContainerStyle={styles.modalImageSwipeContent}
+                          onLayout={(event) => {
+                            // Messen der ScrollView-Breite für pagingEnabled
+                            const { width } = event.nativeEvent.layout;
+                            if (width > 0 && width !== modalScrollViewWidth) {
+                              console.log('📏 Modal ScrollView Breite gemessen:', width);
+                              setModalScrollViewWidth(width);
+                            }
+                          }}
+                          onScroll={(event) => {
+                            const offsetX = event.nativeEvent.contentOffset.x;
+                            const scrollViewWidth = event.nativeEvent.layoutMeasurement.width;
+                            if (scrollViewWidth > 0) {
+                              const index = Math.round(offsetX / scrollViewWidth);
+                              setCurrentImageIndex(Math.max(0, Math.min(index, images.length - 1)));
+                            }
+                          }}
+                          onMomentumScrollEnd={(event) => {
+                            // Zusätzliche Berechnung beim Ende des Scrolls für bessere Genauigkeit
+                            const offsetX = event.nativeEvent.contentOffset.x;
+                            const scrollViewWidth = event.nativeEvent.layoutMeasurement.width;
+                            if (scrollViewWidth > 0) {
+                              const index = Math.round(offsetX / scrollViewWidth);
+                              setCurrentImageIndex(Math.max(0, Math.min(index, images.length - 1)));
+                            }
+                          }}
+                          scrollEventThrottle={16}
+                        >
+                          {images.map((imageUri, index) => {
+                            // Verwende gemessene Breite oder fallback zu 100%
+                            const itemWidth = modalScrollViewWidth || '100%';
+                            console.log(`🖼️ Rendering Bild ${index + 1}/${images.length}:`, imageUri?.substring(0, 50) + '...', 'Breite:', itemWidth);
+                            
+                            return (
+                              <View 
+                                key={index} 
+                                style={[
+                                  styles.modalImageWrapper,
+                                  typeof itemWidth === 'number' ? { width: itemWidth } : {}
+                                ]}
+                              >
+                                <OptimizedImage
+                                  source={{ uri: imageUri }}
+                                  style={styles.modalImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            );
+                          })}
+                        </ScrollView>
+                        {images.length > 1 && (
+                          <View style={styles.imageIndicatorContainer}>
+                            <Text style={styles.imageIndicatorText}>
+                              {currentImageIndex + 1} / {images.length}
+                            </Text>
+                          </View>
+                        )}
+                      </>
                     );
                   })()}
                 </View>
@@ -2364,18 +2436,46 @@ const styles = StyleSheet.create({
   modalImageContainer: {
     width: '100%',
     height: 250,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'transparent',
     position: 'relative',
   },
+  modalImageWrapper: {
+    height: 250,
+    // width wird dynamisch gesetzt (feste Pixel-Breite für pagingEnabled)
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    flexShrink: 0, // Verhindert, dass Items schrumpfen
+    overflow: 'hidden', // Verhindert Überlauf
+  },
   modalImage: {
-    height: '100%',
+    width: '100%',
+    height: 250,
   },
   modalImageSwipeContainer: {
     width: '100%',
-    height: '100%',
+    height: 250,
+    overflow: 'hidden', // Verhindert Überlauf
   },
   modalImageSwipeContent: {
-    alignItems: 'center',
+    // Bei pagingEnabled sollten Items direkt nebeneinander liegen, ohne Zentrierung
+    // Die Zentrierung erfolgt durch die Items selbst (modalImageWrapper)
+    flexDirection: 'row', // Explizit horizontal
+  },
+  imageIndicatorContainer: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    zIndex: 10,
+  },
+  imageIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   imageSwipeContainer: {
     width: '100%',

@@ -4,13 +4,15 @@ import OptimizedImage from './components/OptimizedImage';
 import Footer from './Footer';
 import * as ImagePicker from 'expo-image-picker';
 import { addWine } from './services/database-web';
+import { handleLimitError } from './services/limitErrorHandler';
 import { getCurrentUser } from './services/testAuth';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
+import ProVersionButton from './components/ProVersionButton';
 import { getAllWinesByOwner } from './services/database-web';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadNotifications = 0, unreadHints = 0, isAdmin = false, isLoggedIn = false }) {
+export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadCount = 0, isAdmin = false, isLoggedIn = false, isPro = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [previousWines, setPreviousWines] = useState([]);
   const [dropdownVisible, setDropdownVisible] = useState(false);
@@ -345,8 +347,17 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
       
       Alert.alert('Erfolg', 'Wein erfolgreich zum Weinregal hinzugefügt!');
     } catch (error) {
+      console.error('❌ Fehler beim Hinzufügen des Weines:', error);
+      // Prüfe ob es ein Limit-Fehler ist
+      if (handleLimitError(error, onNavigate)) {
+        return; // Fehler wurde behandelt
+      }
       console.error('❌ Fehler beim Hinzufügen des Weins:', error);
-      Alert.alert('Fehler', 'Wein konnte nicht hinzugefügt werden. Bitte versuchen Sie es erneut.');
+      // Prüfe ob es ein Limit-Fehler ist
+      if (handleLimitError(error, onNavigate)) {
+        return; // Fehler wurde behandelt
+      }
+      Alert.alert('Fehler', `Wein konnte nicht hinzugefügt werden: ${error.message || 'Bitte versuchen Sie es erneut.'}`);
     }
   };
 
@@ -364,7 +375,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={isAdmin} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -675,7 +686,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
                           <OptimizedImage 
                             source={{ uri: imageUri }} 
                             style={styles.imagePreview}
-                            resizeMode="cover"
+                            resizeMode="contain"
                           />
                           <TouchableOpacity 
                             style={styles.removeImageButton}
@@ -727,8 +738,14 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadN
         <BottomNavigation
           onNavigate={onNavigate}
           isLoggedIn={isLoggedIn}
-          unreadNotifications={unreadNotifications}
-          unreadHints={unreadHints}
+          unreadCount={unreadCount}
+        />
+        
+        {/* ProVersion Button */}
+        <ProVersionButton 
+          onNavigate={onNavigate}
+          isPro={isPro}
+          isLoggedIn={isLoggedIn}
         />
       </View>
     </View>
@@ -1147,5 +1164,16 @@ const styles = StyleSheet.create({
   bottomNavContainer: {
     position: 'relative',
     zIndex: 1,
+  },
+  imageGallery: {
+    marginVertical: 10,
+  },
+  imageGalleryContent: {
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  imageItem: {
+    marginRight: 10,
+    position: 'relative',
   },
 });

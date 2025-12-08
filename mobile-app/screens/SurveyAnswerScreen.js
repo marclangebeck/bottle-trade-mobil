@@ -13,11 +13,12 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { getSurvey, hasUserAnsweredSurvey } from '../services/database-web';
 import { getCurrentUser } from '../services/testAuth';
 
-export default function SurveyAnswerScreen({ onNavigate, onLogout, survey: surveyProp, onAnswerSurvey, surveyId, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function SurveyAnswerScreen({ onNavigate, onLogout, survey: surveyProp, onAnswerSurvey, surveyId, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedOption, setSelectedOption] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -164,8 +165,7 @@ export default function SurveyAnswerScreen({ onNavigate, onLogout, survey: surve
             onNavigate={onNavigate} 
             isLoggedIn={true} 
             onLogout={onLogout} 
-            unreadNotifications={unreadNotifications}
-            unreadHints={unreadHints}
+            unreadCount={unreadCount}
             renderButton={false}
             externalMenuVisible={isMenuVisible}
             onMenuToggle={setIsMenuVisible}
@@ -239,9 +239,15 @@ export default function SurveyAnswerScreen({ onNavigate, onLogout, survey: surve
         <BottomNavigation
           onNavigate={onNavigate}
           isLoggedIn={isLoggedIn}
-          unreadNotifications={unreadNotifications}
-          unreadHints={unreadHints}
+          unreadCount={unreadCount}
         />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
       </View>
     );
   }
@@ -261,8 +267,7 @@ export default function SurveyAnswerScreen({ onNavigate, onLogout, survey: surve
           onNavigate={onNavigate} 
           isLoggedIn={true} 
           onLogout={onLogout} 
-          unreadNotifications={unreadNotifications}
-          unreadHints={unreadHints}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -417,8 +422,7 @@ export default function SurveyAnswerScreen({ onNavigate, onLogout, survey: surve
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
       />
     </View>
   );

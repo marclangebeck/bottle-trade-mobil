@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Linking, Animated, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Linking, Animated, Dimensions, ScrollView } from 'react-native';
 import { getCurrentUser } from './services/testAuth';
 
 const MENU_WIDTH = 280;
@@ -174,6 +174,7 @@ export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, o
     { id: 'register', icon: '📝', text: 'Registrieren' },
     { id: 'info', icon: 'ℹ️', text: 'Was ist Bottle-Trade?' },
     { id: 'shop', icon: '🛒', text: 'Shop' },
+    { id: 'app-empfehlen', icon: '📱', text: 'App empfehlen' },
   ];
 
   // Menü-Items für eingeloggte Benutzer
@@ -182,6 +183,7 @@ export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, o
     { id: 'shop', icon: '🛒', text: 'Shop' },
     { id: 'community', icon: '👥', text: 'Community' },
     { id: 'wunschliste', icon: '❤️', text: 'Wunschliste' },
+    { id: 'app-empfehlen', icon: '📱', text: 'App empfehlen' },
     { id: 'instagram', icon: '📷', text: 'Instagram', url: 'https://www.instagram.com/1bottletrade' },
   ];
 
@@ -280,7 +282,12 @@ export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, o
               </TouchableOpacity>
             </View>
             
-            <View style={styles.menuItems}>
+            <ScrollView 
+              style={styles.menuItemsScrollView}
+              contentContainerStyle={styles.menuItemsContent}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+            >
               {/* Hauptnavigation */}
               {currentMenuItems.map((item) => (
                 <TouchableOpacity 
@@ -344,7 +351,7 @@ export default function DynamicHamburgerMenu({ onNavigate, isLoggedIn = false, o
                   <Text style={styles.menuItemText}>{item.icon} {item.text}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
             </Animated.View>
           </Animated.View>
         </TouchableOpacity>
@@ -411,8 +418,7 @@ const styles = StyleSheet.create({
   },
   menuContainer: {
     width: MENU_WIDTH,
-    minHeight: 200,
-    maxHeight: '85%',
+    height: '85%',
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 20,
@@ -431,6 +437,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 20,
     elevation: 20,
+    // Flexbox für Header und ScrollView
+    flexDirection: 'column',
     // Backdrop-Filter Simulation (durch mehrschichtige Schatten)
   },
   menuHeader: {
@@ -469,8 +477,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'rgba(47, 58, 59, 0.1)',
   },
-  menuItems: {
-    // Style for menu items container
+  menuItemsScrollView: {
+    flex: 1,
+    width: '100%',
+  },
+  menuItemsContent: {
+    paddingBottom: 10,
   },
   menuItem: {
     paddingVertical: 14,

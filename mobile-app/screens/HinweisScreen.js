@@ -14,13 +14,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { getCurrentUser } from '../services/testAuth';
 import { getTradeRequest } from '../services/database-web';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase-web';
 
-export default function HinweisScreen({ onNavigate, onLogout = () => {}, chats = [], unreadNotifications = 0, unreadHints = 0, onMarkChatAsRead, onDeleteChat = null, notifications = [], isLoggedIn = false, onDeclineTradeRequest = null, onDeleteNotificationsForHint = null, onMarkAllHintNotificationsAsRead = null, onMarkAllHintsAsRead = null }) {
+export default function HinweisScreen({ onNavigate, onLogout, chats = [], unreadCount = 0, onMarkChatAsRead, onDeleteChat = null, notifications = [], isLoggedIn = false, onDeclineTradeRequest = null, onDeleteNotificationsForHint = null, onMarkAllHintNotificationsAsRead = null, onMarkAllHintsAsRead = null, isPro = false }) {
   console.log('✅ HinweisScreen geladen - Nur Hinweise');
   
   const [isLoading, setIsLoading] = useState(true);
@@ -444,7 +445,7 @@ export default function HinweisScreen({ onNavigate, onLogout = () => {}, chats =
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={false} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -672,8 +673,14 @@ export default function HinweisScreen({ onNavigate, onLogout = () => {}, chats =
       <BottomNavigation 
         onNavigate={onNavigate} 
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
 
       {/* Modal für Hinweis-Details */}

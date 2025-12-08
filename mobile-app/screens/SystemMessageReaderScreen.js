@@ -13,11 +13,12 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { getSystemMessage, markNotificationAsRead } from '../services/database-web';
 import { getCurrentUser } from '../services/testAuth';
 
-export default function SystemMessageReaderScreen({ onNavigate, onLogout, systemMessage: systemMessageProp, onMarkSystemMessageAsRead, messageId, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function SystemMessageReaderScreen({ onNavigate, onLogout, systemMessage: systemMessageProp, onMarkSystemMessageAsRead, messageId, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [systemMessage, setSystemMessage] = useState(systemMessageProp);
   const [isLoading, setIsLoading] = useState(!systemMessageProp);
@@ -128,7 +129,7 @@ export default function SystemMessageReaderScreen({ onNavigate, onLogout, system
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={false} 
-          unreadNotifications={0}
+          unreadCount={0}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -175,8 +176,7 @@ export default function SystemMessageReaderScreen({ onNavigate, onLogout, system
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={false} 
-          unreadNotifications={unreadNotifications}
-          unreadHints={unreadHints}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -270,8 +270,14 @@ export default function SystemMessageReaderScreen({ onNavigate, onLogout, system
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
       </View>
     </View>

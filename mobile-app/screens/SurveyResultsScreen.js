@@ -13,10 +13,11 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 
 const { width } = Dimensions.get('window');
 
-export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surveyAnswers = [], onGetSurveyAnswers = null, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surveyAnswers = [], onGetSurveyAnswers = null, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [results, setResults] = useState(null);
   const [loadedAnswers, setLoadedAnswers] = useState([]);
@@ -112,7 +113,7 @@ export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surv
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={true} 
-          unreadNotifications={0}
+          unreadCount={0}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -162,10 +163,10 @@ export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surv
       
       <DynamicHamburgerMenu 
         onNavigate={onNavigate} 
-        isLoggedIn={true} 
-        onLogout={onLogout} 
-        isAdmin={true} 
-        unreadNotifications={0}
+        isLoggedIn={true}
+        onLogout={onLogout}
+        isAdmin={true}
+        unreadCount={0}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -252,8 +253,14 @@ export default function SurveyResultsScreen({ onNavigate, onLogout, survey, surv
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

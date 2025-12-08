@@ -13,9 +13,10 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 
-export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletters = [], onCreateNewsletter, onSendNewsletter, onDeleteNewsletter, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletters = [], onCreateNewsletter, onSendNewsletter, onDeleteNewsletter, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingNewsletter, setIsCreatingNewsletter] = useState(false);
   const [isCreating, setIsCreating] = useState(false); // Verhindert doppelte Aufrufe
@@ -147,8 +148,7 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={true} 
-          unreadNotifications={unreadNotifications}
-          unreadHints={unreadHints}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -345,8 +345,14 @@ export default function AdminNewsletterScreen({ onNavigate, onLogout, newsletter
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

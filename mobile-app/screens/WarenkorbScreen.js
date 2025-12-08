@@ -12,6 +12,7 @@ import {
 import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { getCurrentUser } from '../services/testAuth';
 import { getUser } from '../services/database-web';
 import { 
@@ -38,7 +39,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function WarenkorbScreen({ onNavigate, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function WarenkorbScreen({ onNavigate, isLoggedIn = false, unreadCount = 0, isPro = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
   const [cartItems, setCartItems] = useState([]);
@@ -319,7 +320,7 @@ export default function WarenkorbScreen({ onNavigate, isLoggedIn = false, unread
           isLoggedIn={isLoggedIn} 
           onLogout={() => {}} 
           isAdmin={false} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -565,8 +566,14 @@ export default function WarenkorbScreen({ onNavigate, isLoggedIn = false, unread
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

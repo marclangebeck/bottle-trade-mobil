@@ -6,9 +6,10 @@ import { addWine } from '../services/database-web';
 import { getCurrentUser } from '../services/testAuth';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, unreadNotifications = 0, unreadHints = 0, isAdmin = false, isLoggedIn = false }) {
+export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, unreadCount = 0, isAdmin = false, isLoggedIn = false }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState('');
@@ -246,7 +247,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={isAdmin} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -580,9 +581,15 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
         <BottomNavigation
           onNavigate={onNavigate}
           isLoggedIn={isLoggedIn}
-          unreadNotifications={unreadNotifications}
-          unreadHints={unreadHints}
+          unreadCount={unreadCount}
         />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
       </View>
     </View>
   );

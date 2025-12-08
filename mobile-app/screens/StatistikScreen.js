@@ -12,6 +12,7 @@ import {
 import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { getCurrentUser } from '../services/testAuth';
 import { getUser } from '../services/database-web';
 import { getCachedProfileImage } from '../services/profileImageCache';
@@ -75,7 +76,7 @@ export default function StatistikScreen({
   isLoggedIn = false, 
   unreadCount = 0, 
   wishlistMatchCount = 0 
-}) {
+}, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(null);
@@ -261,7 +262,7 @@ export default function StatistikScreen({
           {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
           <View style={styles.logoHeaderContainer}>
             {/* Hamburger-Menü links */}
-            <View style={styles.headerLeft}>
+            <View style={styles.headerLeftLogo}>
               <View style={styles.hamburgerContainer}>
                 <TouchableOpacity 
                   style={styles.hamburgerButton}
@@ -317,9 +318,18 @@ export default function StatistikScreen({
           
 {/* Header mit Überschrift */}
           <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => onNavigate('community')}
+              >
+                <Text style={styles.backButtonText}>←</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.headerCenter}>
               <Text style={styles.greeting}>Statistiken</Text>
             </View>
+            <View style={styles.headerRight} />
           </View>
           
           <ScrollView 
@@ -442,6 +452,13 @@ export default function StatistikScreen({
         isLoggedIn={isLoggedIn}
         unreadCount={unreadCount}
       />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
     </View>
   );
 }
@@ -465,10 +482,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
     paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
-  headerLeft: {
+  headerLeftLogo: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 48,
@@ -541,18 +558,18 @@ const styles = StyleSheet.create({
     height: 40,
   },
   profileSection: {
-    minWidth: 48,
+    width: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   profileIconContainer: {
     width: 45,
     height: 45,
+    borderRadius: 22.5,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
-    borderRadius: 22.5,
-    overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
@@ -612,7 +629,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -626,9 +643,32 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
-  headerCenter: {
+  headerLeft: {
     flex: 1,
+    alignItems: 'flex-start',
+  },
+  headerCenter: {
+    flex: 2,
     alignItems: 'center',
+  },
+  headerRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: {
+    color: '#DAA520',
+    fontSize: 18,
+    fontWeight: '600',
   },
   greeting: {
     fontSize: 28,

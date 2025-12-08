@@ -12,6 +12,7 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { getCurrentUser } from '../services/testAuth';
 import { collection, getDocs, deleteDoc, doc, writeBatch, updateDoc, query, where, getDoc, orderBy } from 'firebase/firestore';
@@ -19,7 +20,7 @@ import { db } from '../config/firebase-web';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { rejectTradeRequestsForChat, rejectAllPendingTradeRequests } from '../services/database-web';
 
-export default function AdminChatsScreen({ onNavigate, onLogout, chats = [], onDeleteChat = null, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminChatsScreen({ onNavigate, onLogout, chats = [], onDeleteChat = null, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [allChats, setAllChats] = useState(chats);
@@ -320,7 +321,7 @@ export default function AdminChatsScreen({ onNavigate, onLogout, chats = [], onD
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={true} 
-          unreadNotifications={0}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -470,8 +471,14 @@ export default function AdminChatsScreen({ onNavigate, onLogout, chats = [], onD
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

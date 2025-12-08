@@ -85,6 +85,7 @@ export const createUser = async (userData) => {
     
     const userRef = await addDoc(collection(db, 'users'), {
       ...userData,
+      subscriptionType: userData.subscriptionType || 'basic', // Standard: basic
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
@@ -853,6 +854,21 @@ export const addWine = async (wineData) => {
   try {
     console.log('🔄 Adding wine:', wineData.name);
     
+    // Prüfe Limit für Weinregal
+    if (wineData.ownerId) {
+      const { checkWineRegalLimit } = await import('./subscriptionLimits');
+      const limitCheck = await checkWineRegalLimit(wineData.ownerId);
+      
+      if (!limitCheck.allowed) {
+        const error = new Error(limitCheck.message || 'Limit für Weinregal erreicht');
+        error.limitExceeded = true;
+        error.limitType = 'wineRegal';
+        error.current = limitCheck.current;
+        error.limit = limitCheck.limit;
+        throw error;
+      }
+    }
+    
     // Unterstütze sowohl labelImage (alt) als auch labelImages (neu) für Rückwärtskompatibilität
     let labelImages = wineData.labelImages || (wineData.labelImage ? [wineData.labelImage] : []);
     
@@ -1264,6 +1280,33 @@ export const publishWine = async (wineId) => {
   try {
     console.log('🔄 Publishing wine:', wineId);
     
+    // Hole Wein-Daten um ownerId zu bekommen
+    const wineDoc = await getDoc(doc(db, 'wines', wineId));
+    if (!wineDoc.exists()) {
+      throw new Error('Wein nicht gefunden');
+    }
+    const wineData = wineDoc.data();
+    const ownerId = wineData.ownerId;
+    
+    if (!ownerId) {
+      throw new Error('Owner-ID nicht gefunden');
+    }
+    
+    // Prüfe Limit für veröffentlichte Weine (nur wenn Wein noch nicht veröffentlicht ist)
+    if (wineData.status !== 'public') {
+      const { checkPublishedWinesLimit } = await import('./subscriptionLimits');
+      const limitCheck = await checkPublishedWinesLimit(ownerId);
+      
+      if (!limitCheck.allowed) {
+        const error = new Error(limitCheck.message || 'Limit für veröffentlichte Weine erreicht');
+        error.limitExceeded = true;
+        error.limitType = 'publishedWines';
+        error.current = limitCheck.current;
+        error.limit = limitCheck.limit;
+        throw error;
+      }
+    }
+    
     await updateDoc(doc(db, 'wines', wineId), {
       status: 'public',
       availableForTrade: true,
@@ -1420,9 +1463,54 @@ export const getTradeRequest = async (requestId) => {
 export const updateTradeRequestStatus = async (requestId, updates) => {
   try {
     console.log('🔄 Updating trade request:', requestId);
+    
+    // Prüfe Limit für vollzogene Trades (nur wenn Status auf 'completed' gesetzt wird)
+    if (updates.status === 'completed') {
+      // Hole Trade-Request Daten
+      const tradeRequestDoc = await getDoc(doc(db, 'tradeRequests', requestId));
+      if (tradeRequestDoc.exists()) {
+        const tradeData = tradeRequestDoc.data();
+        const fromUserId = tradeData.fromUserId;
+        const toUserId = tradeData.toUserId;
+        
+        // Prüfe Limit für beide User (Absender und Empfänger)
+        const { checkMonthlyTradesLimit } = await import('./subscriptionLimits');
+        
+        // Prüfe für Absender
+        if (fromUserId) {
+          const limitCheckFrom = await checkMonthlyTradesLimit(fromUserId);
+          if (!limitCheckFrom.allowed) {
+            const error = new Error(limitCheckFrom.message || 'Limit für Trades pro Monat erreicht');
+            error.limitExceeded = true;
+            error.limitType = 'monthlyTrades';
+            error.current = limitCheckFrom.current;
+            error.limit = limitCheckFrom.limit;
+            error.userId = fromUserId;
+            throw error;
+          }
+        }
+        
+        // Prüfe für Empfänger
+        if (toUserId) {
+          const limitCheckTo = await checkMonthlyTradesLimit(toUserId);
+          if (!limitCheckTo.allowed) {
+            const error = new Error(limitCheckTo.message || 'Limit für Trades pro Monat erreicht');
+            error.limitExceeded = true;
+            error.limitType = 'monthlyTrades';
+            error.current = limitCheckTo.current;
+            error.limit = limitCheckTo.limit;
+            error.userId = toUserId;
+            throw error;
+          }
+        }
+      }
+    }
+    
     await updateDoc(doc(db, 'tradeRequests', requestId), {
       ...updates,
       updatedAt: serverTimestamp(),
+      // Setze completedAt wenn Status auf 'completed' gesetzt wird
+      ...(updates.status === 'completed' ? { completedAt: serverTimestamp() } : {})
     });
     console.log('✅ Trade request updated:', requestId);
     return true;
@@ -3482,6 +3570,19 @@ export const subscribeInserate = (type = null, callback) => {
  */
 export const createWish = async (userId, wishData) => {
   try {
+    // Prüfe Limit für Wunschliste
+    const { checkWishlistLimit } = await import('./subscriptionLimits');
+    const limitCheck = await checkWishlistLimit(userId);
+    
+    if (!limitCheck.allowed) {
+      const error = new Error(limitCheck.message || 'Limit für Wunschliste erreicht');
+      error.limitExceeded = true;
+      error.limitType = 'wishlist';
+      error.current = limitCheck.current;
+      error.limit = limitCheck.limit;
+      throw error;
+    }
+    
     // Validierung: Mindestens ein Feld muss ausgefüllt sein
     const hasAnyField = wishData.name || wishData.winery || wishData.vintage || 
                        wishData.region || wishData.grapeVariety;

@@ -19,6 +19,7 @@ import OptimizedImage from '../components/OptimizedImage';
 import Footer from '../Footer';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { getCurrentUser } from '../services/testAuth';
 import { getUser } from '../services/database-web';
 import { 
@@ -39,7 +40,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function WeingueterScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, chats = [], isLoggedIn = false, wishlistMatchCount = 0 }) {
+export default function WeingueterScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, chats = [], isLoggedIn = false, wishlistMatchCount = 0 }, isPro = false) {
   const [wineries, setWineries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
@@ -195,7 +196,7 @@ export default function WeingueterScreen({ onNavigate, onLogout, isAdmin = false
         {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
         <View style={styles.logoHeaderContainer}>
           {/* Hamburger-Menü links */}
-          <View style={styles.headerLeft}>
+          <View style={styles.headerLeftLogo}>
             <View style={styles.hamburgerContainer}>
               <TouchableOpacity 
                 style={styles.hamburgerButton}
@@ -251,9 +252,18 @@ export default function WeingueterScreen({ onNavigate, onLogout, isAdmin = false
           
 {/* Header mit Überschrift */}
         <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => onNavigate('community')}
+            >
+              <Text style={styles.backButtonText}>←</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.headerCenter}>
             <Text style={styles.greeting}>Weingüter</Text>
           </View>
+          <View style={styles.headerRight} />
         </View>
         
         {/* Toggle-Buttons für Ansicht */}
@@ -540,7 +550,14 @@ export default function WeingueterScreen({ onNavigate, onLogout, isAdmin = false
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadCount}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );
@@ -561,10 +578,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
     paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
-  headerLeft: {
+  headerLeftLogo: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 48,
@@ -622,7 +639,7 @@ const styles = StyleSheet.create({
     borderRadius: 22.5,
   },
   profileIconText: {
-    fontSize: 25,
+    fontSize: 18,
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
@@ -641,9 +658,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     fontStyle: 'italic',
   },
-
   profileSection: {
-    minWidth: 48,
+    width: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -664,7 +680,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -678,9 +694,32 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
-  headerCenter: {
+  headerLeft: {
     flex: 1,
+    alignItems: 'flex-start',
+  },
+  headerCenter: {
+    flex: 2,
     alignItems: 'center',
+  },
+  headerRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: {
+    color: '#DAA520',
+    fontSize: 18,
+    fontWeight: '600',
   },
   greeting: {
     fontSize: 28,

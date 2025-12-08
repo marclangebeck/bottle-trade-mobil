@@ -133,6 +133,16 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
             >
               <Text style={styles.linkText}>Noch kein Konto? Jetzt registrieren</Text>
             </TouchableOpacity>
+            
+            {onNavigate && (
+              <TouchableOpacity 
+                style={styles.confirmButton} 
+                onPress={() => onNavigate('email-confirmation')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmButtonText}>📧 E-Mail-Adresse bestätigen</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -266,6 +276,24 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
     opacity: 0.8,
+  },
+  confirmButton: {
+    marginTop: 15,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 15,
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 0.4)',
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    color: '#DAA520',
+    fontSize: 14,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   backButton: {
     position: 'absolute',

@@ -18,7 +18,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function ImpressumScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false }) {
+export default function ImpressumScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
 
@@ -267,6 +267,7 @@ export default function ImpressumScreen({ onNavigate, onLogout, isAdmin = false,
         isLoggedIn={isLoggedIn}
         unreadCount={unreadCount}
       />
+      
     </View>
   );
 }

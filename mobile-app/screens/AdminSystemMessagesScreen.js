@@ -14,9 +14,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 
-export default function AdminSystemMessagesScreen({ onNavigate, onLogout, systemMessages = [], onCreateSystemMessage, onSendSystemMessage, onDeleteSystemMessage, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminSystemMessagesScreen({ onNavigate, onLogout, systemMessages = [], onCreateSystemMessage, onSendSystemMessage, onDeleteSystemMessage, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingMessage, setIsCreatingMessage] = useState(false);
   const [isCreating, setIsCreating] = useState(false); // Verhindert doppelte Aufrufe
@@ -155,7 +156,7 @@ export default function AdminSystemMessagesScreen({ onNavigate, onLogout, system
         isLoggedIn={true} 
         onLogout={onLogout} 
         isAdmin={true} 
-        unreadNotifications={0}
+        unreadCount={unreadCount}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -396,8 +397,14 @@ export default function AdminSystemMessagesScreen({ onNavigate, onLogout, system
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

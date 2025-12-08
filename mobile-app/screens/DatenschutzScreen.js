@@ -18,7 +18,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function DatenschutzScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false }) {
+export default function DatenschutzScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
 
@@ -422,6 +422,7 @@ export default function DatenschutzScreen({ onNavigate, onLogout, isAdmin = fals
         isLoggedIn={isLoggedIn}
         unreadCount={unreadCount}
       />
+      
     </View>
   );
 }

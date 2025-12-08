@@ -35,7 +35,8 @@
           "autoVerify": true,
           "data": [
             {
-              "scheme": "bottletrade"
+              "scheme": "bottletrade",
+              "host": "*"
             },
             {
               "scheme": "https",

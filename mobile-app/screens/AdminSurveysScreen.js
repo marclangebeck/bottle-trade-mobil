@@ -13,9 +13,10 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 
-export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [], onCreateSurvey, onDeleteSurvey, onEndSurvey, onGetSurveyAnswers = null, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [], onCreateSurvey, onDeleteSurvey, onEndSurvey, onGetSurveyAnswers = null, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
   const [surveyData, setSurveyData] = useState({
@@ -188,7 +189,7 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={true} 
-          unreadNotifications={0}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -428,8 +429,14 @@ export default function AdminSurveysScreen({ onNavigate, onLogout, surveys = [],
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

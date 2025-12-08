@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { getCurrentUser } from '../services/testAuth';
 import { getUser } from '../services/database-web';
 import {
@@ -47,10 +48,9 @@ export default function SchwarzesBrettScreen({
   onNavigate,
   onLogout,
   isAdmin = false,
-  unreadNotifications = 0,
-  unreadHints = 0,
+  unreadCount = 0,
   isLoggedIn = false,
-}) {
+}, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
   const [activeTab, setActiveTab] = useState('suche'); // 'suche' oder 'biete'
@@ -373,7 +373,7 @@ export default function SchwarzesBrettScreen({
         isLoggedIn={true}
         onLogout={onLogout}
         isAdmin={isAdmin}
-        unreadNotifications={unreadNotifications}
+        unreadCount={unreadCount}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -382,7 +382,7 @@ export default function SchwarzesBrettScreen({
       <View style={styles.contentContainer}>
         {/* Logo-Header */}
         <View style={styles.logoHeaderContainer}>
-          <View style={styles.headerLeft}>
+          <View style={styles.headerLeftLogo}>
             <View style={styles.hamburgerContainer}>
               <TouchableOpacity
                 style={styles.hamburgerButton}
@@ -436,9 +436,18 @@ export default function SchwarzesBrettScreen({
           
 {/* Header mit Überschrift */}
         <View style={styles.header}>
-          <View style={styles.headerCenter}>
-            <Text style={styles.greeting}>Schwarzes Brett</Text>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => onNavigate('community')}
+            >
+              <Text style={styles.backButtonText}>←</Text>
+            </TouchableOpacity>
           </View>
+          <View style={styles.headerCenter}>
+            <Text style={styles.greeting} adjustsFontSizeToFit={true} minimumFontScale={0.7} numberOfLines={1}>Schwarzes Brett</Text>
+          </View>
+          <View style={styles.headerRight} />
         </View>
 
         {/* Tabs */}
@@ -511,8 +520,15 @@ export default function SchwarzesBrettScreen({
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button - links positioniert wegen FAB rechts */}
+      <ProVersionButton
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+        positionLeft={true}
       />
 
       {/* Detail-Modal (Bottom Sheet) */}
@@ -838,10 +854,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    paddingTop: Platform.OS === 'ios' ? 10 : 40, // 10px für iOS, damit StatusBar nicht verdeckt wird
     paddingBottom: 0, // Auf 0px gesetzt, damit Tagline direkt darunter liegt
   },
-  headerLeft: {
+  headerLeftLogo: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 48,
@@ -852,6 +868,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     width: 44,
     alignItems: 'center',
+    marginBottom: 8,
   },
   hamburgerButton: {
     width: 44,
@@ -894,26 +911,35 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   logoImageWrapper: {
     width: 40,
     height: 40,
     marginLeft: 6, // Reduziert von 12 auf 6 (50%)
     marginRight: 6, // Reduziert von 12 auf 6 (50%)
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoHeaderImage: {
     width: 40,
     height: 40,
   },
   profileSection: {
-    minWidth: 48,
+    width: 48,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   profileIconContainer: {
     width: 45,
     height: 45,
     borderRadius: 22.5,
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
@@ -955,20 +981,46 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 20,
     backgroundColor: '#2c2c2c',
+    position: 'relative',
+    marginTop: 0,
+    minHeight: 60,
     borderTopWidth: 1,
     borderTopColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(218, 165, 32, 0.2)', // Subtiler goldener Akzent
   },
-  headerCenter: {
+  headerLeft: {
     flex: 1,
+    alignItems: 'flex-start',
+  },
+  headerCenter: {
+    flex: 2,
     alignItems: 'center',
+  },
+  headerRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(218, 165, 32, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: {
+    color: '#DAA520',
+    fontSize: 18,
+    fontWeight: '600',
   },
   greeting: {
     fontSize: 28,

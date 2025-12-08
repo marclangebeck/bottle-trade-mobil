@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Platform, Image } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Platform, Image, Dimensions } from 'react-native';
 import Footer from './Footer';
 import OptimizedImage from './components/OptimizedImage';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
+import ProVersionButton from './components/ProVersionButton';
 
-export default function WeinDetailScreen({ onNavigate, onLogout, wineData, isLoggedIn = false, inTradeContext = false, backTarget = 'weinboerse', unreadNotifications = 0, unreadHints = 0 }) {
+export default function WeinDetailScreen({ onNavigate, onLogout, wineData, isLoggedIn = false, inTradeContext = false, backTarget = 'weinboerse', unreadCount = 0, isPro = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0); // Für Swipe-Galerie
+  const [scrollViewWidth, setScrollViewWidth] = useState(null); // Breite der ScrollView für pagingEnabled
   
   if (!wineData) {
     return (
@@ -90,18 +93,98 @@ export default function WeinDetailScreen({ onNavigate, onLogout, wineData, isLog
         <View style={styles.formContainer}>
           {/* Etikett-Foto */}
           <View style={styles.imageContainer}>
-            {wineData.labelImage ? (
-              <OptimizedImage 
-                source={{ uri: wineData.labelImage }} 
-                style={styles.wineImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.placeholderImage}>
-                <Text style={styles.placeholderText}>📷</Text>
-                <Text style={styles.imagePlaceholderLabel}>Kein Etikett-Foto</Text>
-              </View>
-            )}
+            {(() => {
+              // Unterstütze sowohl labelImages Array als auch labelImage (Rückwärtskompatibilität)
+              const images = wineData.labelImages || (wineData.labelImage ? [wineData.labelImage] : []);
+              
+              if (images.length === 0) {
+                return (
+                  <View style={styles.placeholderImage}>
+                    <Text style={styles.placeholderText}>📷</Text>
+                    <Text style={styles.imagePlaceholderLabel}>Kein Etikett-Foto</Text>
+                  </View>
+                );
+              }
+              
+              // Wenn nur ein Bild, zeige es direkt
+              if (images.length === 1) {
+                return (
+                  <OptimizedImage 
+                    source={{ uri: images[0] }} 
+                    style={styles.wineImage}
+                    resizeMode="contain"
+                  />
+                );
+              }
+              
+              // Mehrere Bilder: Zeige Galerie mit ScrollView
+              return (
+                <>
+                  <ScrollView
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.imageGalleryContainer}
+                    contentContainerStyle={styles.imageGalleryContent}
+                    onLayout={(event) => {
+                      // Messen der ScrollView-Breite für pagingEnabled
+                      const { width } = event.nativeEvent.layout;
+                      if (width > 0 && width !== scrollViewWidth) {
+                        console.log('📏 WeinDetailScreen ScrollView Breite gemessen:', width);
+                        setScrollViewWidth(width);
+                      }
+                    }}
+                    onScroll={(event) => {
+                      const offsetX = event.nativeEvent.contentOffset.x;
+                      const scrollViewWidth = event.nativeEvent.layoutMeasurement.width;
+                      if (scrollViewWidth > 0) {
+                        const index = Math.round(offsetX / scrollViewWidth);
+                        setCurrentImageIndex(Math.max(0, Math.min(index, images.length - 1)));
+                      }
+                    }}
+                    onMomentumScrollEnd={(event) => {
+                      // Zusätzliche Berechnung beim Ende des Scrolls für bessere Genauigkeit
+                      const offsetX = event.nativeEvent.contentOffset.x;
+                      const scrollViewWidth = event.nativeEvent.layoutMeasurement.width;
+                      if (scrollViewWidth > 0) {
+                        const index = Math.round(offsetX / scrollViewWidth);
+                        setCurrentImageIndex(Math.max(0, Math.min(index, images.length - 1)));
+                      }
+                    }}
+                    scrollEventThrottle={16}
+                  >
+                    {images.map((imageUri, index) => {
+                      // Verwende gemessene Breite oder fallback zu screenWidth
+                      const itemWidth = scrollViewWidth || Dimensions.get('window').width;
+                      console.log(`🖼️ Rendering Bild ${index + 1}/${images.length}:`, imageUri?.substring(0, 50) + '...', 'Breite:', itemWidth);
+                      
+                      return (
+                        <View 
+                          key={index} 
+                          style={[
+                            styles.imageGalleryItem, 
+                            typeof itemWidth === 'number' ? { width: itemWidth } : {}
+                          ]}
+                        >
+                          <OptimizedImage 
+                            source={{ uri: imageUri }} 
+                            style={styles.wineImage}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                  {images.length > 1 && (
+                    <View style={styles.imageIndicatorContainer}>
+                      <Text style={styles.imageIndicatorText}>
+                        {currentImageIndex + 1} / {images.length}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              );
+            })()}
           </View>
 
           {/* Grunddaten */}
@@ -208,8 +291,14 @@ export default function WeinDetailScreen({ onNavigate, onLogout, wineData, isLog
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );
@@ -334,6 +423,8 @@ const styles = StyleSheet.create({
   wineImage: {
     width: 200,
     height: 200,
+    maxWidth: '100%',
+    maxHeight: '100%',
     borderRadius: 12,
     borderWidth: 2,
     borderColor: '#D2691E',
@@ -470,5 +561,39 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#2f3a3b',
     fontSize: 18,
+  },
+  imageGalleryContainer: {
+    width: '100%',
+    height: 200,
+    overflow: 'hidden', // Verhindert Überlauf
+    position: 'relative', // Für absolute Positionierung des Indikators
+  },
+  imageGalleryContent: {
+    // Bei pagingEnabled sollten Items direkt nebeneinander liegen, ohne Zentrierung
+    // Die Zentrierung erfolgt durch die Items selbst (imageGalleryItem)
+    flexDirection: 'row', // Explizit horizontal
+  },
+  imageGalleryItem: {
+    height: 200,
+    // width wird dynamisch gesetzt (feste Pixel-Breite für pagingEnabled)
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0, // Verhindert, dass Items schrumpfen
+    overflow: 'hidden', // Verhindert Überlauf
+  },
+  imageIndicatorContainer: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    zIndex: 10,
+  },
+  imageIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

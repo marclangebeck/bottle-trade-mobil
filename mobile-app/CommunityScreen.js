@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import OptimizedImage from './components/OptimizedImage';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
+import ProVersionButton from './components/ProVersionButton';
 import { getCurrentUser } from './services/testAuth';
 import { getUser } from './services/database-web';
 
@@ -28,7 +29,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false, unreadNotifications = 0, unreadHints = 0, isLoggedIn = false, wishlistMatchCount = 0 }) {
+export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false, wishlistMatchCount = 0, isPro = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [userBtp, setUserBtp] = useState(0);
   const [profileImage, setProfileImage] = useState(null);
@@ -232,7 +233,7 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
         isLoggedIn={true} 
         onLogout={onLogout} 
         isAdmin={isAdmin} 
-        unreadNotifications={unreadNotifications}
+        unreadCount={unreadCount}
         renderButton={false}
         externalMenuVisible={isMenuVisible}
         onMenuToggle={setIsMenuVisible}
@@ -327,8 +328,14 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );
@@ -437,7 +444,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   profileSection: {
-    minWidth: 48,
+    width: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },

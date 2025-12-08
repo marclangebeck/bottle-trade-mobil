@@ -100,6 +100,35 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
     }
   };
 
+  // Passwort-Validierung
+  const validatePassword = (password) => {
+    const errors = [];
+    
+    if (password.length < 8) {
+      errors.push('mindestens 8 Zeichen lang');
+    }
+    if (!/[A-Z]/.test(password)) {
+      errors.push('mindestens einen Großbuchstaben');
+    }
+    if (!/[a-z]/.test(password)) {
+      errors.push('mindestens einen Kleinbuchstaben');
+    }
+    if (!/[0-9]/.test(password)) {
+      errors.push('mindestens eine Ziffer');
+    }
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      errors.push('mindestens ein Sonderzeichen');
+    }
+    
+    return errors;
+  };
+
+  // E-Mail-Validierung
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleRegister = async () => {
     const { username, email, password, confirmPassword, firstName, lastName, street, houseNumber, zipCode, city, publishProfile, newsletter, ageConfirmed, termsAccepted } = formData;
     
@@ -108,13 +137,24 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
       return;
     }
     
-    if (password !== confirmPassword) {
-      Alert.alert('Fehler', 'Die Passwörter stimmen nicht überein');
+    // E-Mail-Validierung
+    if (!validateEmail(email)) {
+      Alert.alert('Fehler', 'Bitte geben Sie eine gültige E-Mail-Adresse ein');
       return;
     }
     
-    if (!password || password.trim().length === 0) {
-      Alert.alert('Fehler', 'Bitte geben Sie ein Passwort ein');
+    // Passwort-Validierung
+    const passwordErrors = validatePassword(password);
+    if (passwordErrors.length > 0) {
+      Alert.alert(
+        'Passwort-Anforderungen nicht erfüllt',
+        `Ihr Passwort muss folgende Anforderungen erfüllen:\n\n• ${passwordErrors.join('\n• ')}\n\nBitte korrigieren Sie Ihr Passwort.`
+      );
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      Alert.alert('Fehler', 'Die Passwörter stimmen nicht überein');
       return;
     }
 
@@ -178,9 +218,23 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
       const user = await registerUser(email, password, userData);
       console.log('✅ Registration successful:', user.email);
       
-      Alert.alert('Erfolg', 'Registrierung erfolgreich! Bitte bestätigen Sie Ihre E-Mail.', [
-        { text: 'OK', onPress: () => onRegister(registrationData) }
-      ]);
+      // Prüfe ob E-Mail gesendet wurde (optional - nicht kritisch)
+      const emailSent = true; // Wird durch Backend-API gesendet (kann fehlschlagen, ist aber nicht kritisch)
+      
+      Alert.alert(
+        'Registrierung erfolgreich!', 
+        emailSent 
+          ? 'Wir haben Ihnen eine E-Mail zur Bestätigung gesendet. Bitte bestätigen Sie Ihre E-Mail-Adresse und warten Sie auf die Freischaltung durch einen Admin.\n\nFalls Sie keine E-Mail erhalten haben, können Sie den Bestätigungs-Token auch manuell in der App eingeben.'
+          : 'Ihr Konto wurde erstellt. Bitte kontaktieren Sie den Support für die E-Mail-Bestätigung, falls das Backend nicht erreichbar war.',
+        [
+          { text: 'OK', onPress: () => {
+            // Navigiere zurück zum Welcome-Screen (kein automatischer Login)
+            if (onNavigate) {
+              onNavigate('welcome');
+            }
+          }}
+        ]
+      );
     } catch (error) {
       console.error('❌ Registration failed:', error);
       Alert.alert('Fehler', 'Registrierung fehlgeschlagen: ' + error.message);

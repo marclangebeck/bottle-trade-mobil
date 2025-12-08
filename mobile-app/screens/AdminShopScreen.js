@@ -16,6 +16,7 @@ import {
 import OptimizedImage from '../components/OptimizedImage';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import { getCurrentUser } from '../services/testAuth';
 import { getUser } from '../services/database-web';
 import * as ImagePicker from 'expo-image-picker';
@@ -41,7 +42,7 @@ const getInitials = (user) => {
   return 'P';
 };
 
-export default function AdminShopScreen({ onNavigate, isLoggedIn = false, unreadNotifications = 0, unreadHints = 0 }) {
+export default function AdminShopScreen({ onNavigate, isLoggedIn = false, unreadCount = 0 }, isPro = false) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
   const [products, setProducts] = useState([]);
@@ -336,7 +337,7 @@ export default function AdminShopScreen({ onNavigate, isLoggedIn = false, unread
           isLoggedIn={isLoggedIn} 
           onLogout={() => {}} 
           isAdmin={true} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -756,8 +757,14 @@ export default function AdminShopScreen({ onNavigate, isLoggedIn = false, unread
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );

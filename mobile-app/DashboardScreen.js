@@ -18,6 +18,7 @@ try {
 import OptimizedImage from './components/OptimizedImage';
 import DynamicHamburgerMenu from './DynamicHamburgerMenu';
 import BottomNavigation from './components/BottomNavigation';
+import ProVersionButton from './components/ProVersionButton';
 import { getCurrentUser } from './services/testAuth';
 import { getAvailableWinesCount, getUserWineCounts, getOnlineUsersCount, getCompletedTradesCount, getMyCompletedTradesCount, getAvailableWines, getUser } from './services/database-web';
 
@@ -34,7 +35,7 @@ const getInitials = (user) => {
 };
 import { getCoordinatesForZipCode, getDistanceText } from './services/geocodingService';
 
-export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false, wishlistMatchCount = 0, onUpdateTourElementPosition = null }) {
+export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false, unreadCount = 0, isLoggedIn = false, wishlistMatchCount = 0, onUpdateTourElementPosition = null, isPro = false }) {
   // Log nur bei Änderung, nicht bei jedem Render
   const prevUnreadRef = React.useRef(unreadCount);
   React.useEffect(() => {
@@ -511,6 +512,13 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
         unreadCount={unreadCount}
         onUpdateTourElementPosition={onUpdateTourElementPosition}
       />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
 
       {/* Modal für Wein-Auswahl (wenn mehrere Weine an einer Position) */}
       <Modal
@@ -608,12 +616,43 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
               <>
                 {/* Wein-Bild (kleiner) */}
                 <View style={styles.modalImageContainer}>
-                  {selectedWine.labelImage ? (
-                    <OptimizedImage
-                      source={{ uri: selectedWine.labelImage }}
-                      style={styles.modalImage}
-                      resizeMode="cover"
-                    />
+                  {(() => {
+                    // Unterstütze sowohl labelImages Array als auch labelImage (Rückwärtskompatibilität)
+                    const images = selectedWine.labelImages || (selectedWine.labelImage ? [selectedWine.labelImage] : []);
+                    if (images.length === 0) {
+                      return null;
+                    }
+                    // Zeige erstes Bild oder Galerie wenn mehrere vorhanden
+                    if (images.length === 1) {
+                      return (
+                        <OptimizedImage
+                          source={{ uri: images[0] }}
+                          style={styles.modalImage}
+                          resizeMode="contain"
+                        />
+                      );
+                    }
+                    // Mehrere Bilder: Zeige Galerie
+                    return (
+                      <ScrollView
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.modalImageGalleryContainer}
+                        contentContainerStyle={styles.modalImageGalleryContent}
+                      >
+                        {images.map((imageUri, index) => (
+                          <View key={index} style={styles.modalImageGalleryItem}>
+                            <OptimizedImage
+                              source={{ uri: imageUri }}
+                              style={styles.modalImage}
+                              resizeMode="contain"
+                            />
+                          </View>
+                        ))}
+                      </ScrollView>
+                    );
+                  })()}
                   ) : (
                     <View style={styles.modalPlaceholderImage}>
                       <Text style={styles.modalPlaceholderText}>🍷</Text>
@@ -1493,7 +1532,7 @@ const styles = StyleSheet.create({
   },
   modalImage: {
     width: '100%',
-    height: '100%',
+    height: 120,
   },
   modalPlaceholderImage: {
     width: '100%',
@@ -1683,5 +1722,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  modalImageGalleryContainer: {
+    width: '100%',
+    height: 120,
+    overflow: 'hidden', // Verhindert Überlauf
+  },
+  modalImageGalleryContent: {
+    // Bei pagingEnabled sollten Items direkt nebeneinander liegen, ohne Zentrierung
+    // Die Zentrierung erfolgt durch die Items selbst (modalImageGalleryItem)
+    flexDirection: 'row', // Explizit horizontal
+  },
+  modalImageGalleryItem: {
+    width: Dimensions.get('window').width, // Volle Breite für pagingEnabled
+    height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0, // Verhindert, dass Items schrumpfen
   },
 });

@@ -14,10 +14,11 @@ import {
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
 import BottomNavigation from '../components/BottomNavigation';
+import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { getCurrentUser } from '../services/testAuth';
 
-export default function ChatRoomScreen({ onNavigate, onLogout = () => {}, chat, unreadNotifications = 0, unreadHints = 0, messages = [], onAddMessage, onUpdateMessage, onMarkChatAsRead, isLoggedIn = false }) {
+export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount = 0, messages = [], onAddMessage, onUpdateMessage, onMarkChatAsRead, isLoggedIn = false, isPro = false }) {
   // VERSION: 2.0 - Fix für undefined reactions
   console.log('✅ ChatRoomScreen V2.0 geladen - Fix für undefined reactions');
   
@@ -232,7 +233,7 @@ export default function ChatRoomScreen({ onNavigate, onLogout = () => {}, chat, 
           isLoggedIn={true} 
           onLogout={onLogout} 
           isAdmin={false} 
-          unreadNotifications={unreadNotifications}
+          unreadCount={unreadCount}
           renderButton={false}
           externalMenuVisible={isMenuVisible}
           onMenuToggle={setIsMenuVisible}
@@ -272,7 +273,7 @@ export default function ChatRoomScreen({ onNavigate, onLogout = () => {}, chat, 
                 style={styles.backButton}
                 onPress={() => onNavigate && onNavigate('infobox')}
               >
-                <Text style={styles.backButtonText}>← Zurück</Text>
+                <Text style={styles.backButtonText}>←</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -478,8 +479,14 @@ export default function ChatRoomScreen({ onNavigate, onLogout = () => {}, chat, 
       <BottomNavigation
         onNavigate={onNavigate}
         isLoggedIn={isLoggedIn}
-        unreadNotifications={unreadNotifications}
-        unreadHints={unreadHints}
+        unreadCount={unreadCount}
+      />
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
       />
     </View>
   );
@@ -531,9 +538,23 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
   },
+  taglineContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0,
+    paddingBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taglineText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    letterSpacing: 0.5,
+    fontStyle: 'italic',
+  },
   profileIconContainer: {
-    width: 80,
-    height: 40,
+    width: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -592,17 +613,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)'
+    borderColor: 'rgba(218, 165, 32, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
+    color: '#DAA520',
+    fontSize: 18,
+    fontWeight: '600',
   },
   greeting: {
     fontSize: 28,
