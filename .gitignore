@@ -47,3 +47,7 @@ mobile-app_reset_before_restore/
 # Large data files
 DE.txt
 cloudflared-*.deb
+
+# Firebase credentials (contains secrets)
+**/firebase-credentials.json
+backend-api/firebase-credentials.json
