@@ -42,6 +42,9 @@ cd /home/bottleadmin/bottle-trade-mobile/mobile-app
 
 # Starte Expo
 echo "🚀 Starte Expo Server..."
+# CI-Variable deaktivieren, damit QR-Code angezeigt wird
+unset CI
+export PATH="$HOME/.nvm/versions/node/v20.19.6/bin:$PATH"
 npx expo start --tunnel --clear --port $PORT
 
 
