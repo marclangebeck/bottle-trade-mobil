@@ -1,70 +1,42 @@
-# Quick Start - Rechnungsstellung testen
+# Backend schnell starten
 
-## ⚠️ Was noch fehlt:
+## Option 1: systemd Service einrichten (empfohlen - startet automatisch)
 
-### 1. Dependencies installieren
 ```bash
 cd /home/bottleadmin/bottle-trade-mobile/backend-api
-pip install -r requirements.txt
+sudo ./setup-systemd-service.sh
 ```
 
-### 2. Firebase Credentials
-- Firebase Console öffnen
-- Service Account Key herunterladen
-- Als `firebase-credentials.json` im `backend-api/` Verzeichnis speichern
+Danach startet das Backend automatisch beim Server-Boot.
 
-### 3. E-Mail-Konfiguration (optional für Tests)
-```bash
-export SMTP_SERVER=smtp.gmail.com
-export SMTP_PORT=587
-export SMTP_USER=your-email@gmail.com
-export SMTP_PASSWORD=your-app-password
-export FROM_EMAIL=noreply@bottle-trade.de
-```
-
-## ✅ Was passiert, wenn du jetzt testest:
-
-**Ohne Konfiguration:**
-- ❌ Backend-Fehler: "Network request failed" (Dependencies fehlen)
-- ⚠️ Bestellung wird trotzdem als "paid" markiert
-- ⚠️ Rechnung wird NICHT generiert
-
-**Mit Dependencies, aber ohne Firebase Credentials:**
-- ❌ Backend-Fehler: "Firebase nicht initialisiert"
-- ⚠️ Bestellung wird trotzdem als "paid" markiert
-- ⚠️ Rechnung wird NICHT generiert
-
-**Mit Dependencies + Firebase, aber ohne E-Mail:**
-- ✅ PDF wird generiert
-- ⚠️ E-Mail wird NICHT versendet (wird geloggt, blockiert aber nicht)
-- ✅ Bestellung bleibt als "paid" markiert
-
-**Mit allem:**
-- ✅ PDF wird generiert
-- ✅ E-Mail wird versendet
-- ✅ Bestellung bleibt als "paid" markiert
-
-## 🚀 Schnellstart (minimal für Tests):
+## Option 2: Manuell starten
 
 ```bash
-# 1. Dependencies installieren
 cd /home/bottleadmin/bottle-trade-mobile/backend-api
-pip install -r requirements.txt
-
-# 2. Firebase Credentials hinzufügen
-# (Service Account Key als firebase-credentials.json speichern)
-
-# 3. Backend starten
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# 4. App starten und testen
+source venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-## 📧 E-Mail ist optional!
+**Hinweis:** Dies startet das Backend nur für die aktuelle Session. Nach einem Neustart muss es erneut gestartet werden.
 
-Auch ohne E-Mail-Konfiguration:
-- PDF wird generiert (kann später manuell versendet werden)
-- Bestellung funktioniert normal
-- Nur E-Mail-Versand schlägt fehl (wird geloggt)
+## Status prüfen
 
+```bash
+# Prüfe ob Backend läuft
+curl http://localhost:8000/health
 
+# Prüfe systemd Service (falls eingerichtet)
+sudo systemctl status bottle-trade-backend
+```
+
+## Backend im Hintergrund starten (ohne systemd)
+
+```bash
+cd /home/bottleadmin/bottle-trade-mobile/backend-api
+source venv/bin/activate
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
+```
+
+## Empfehlung
+
+**Verwende Option 1 (systemd Service)** - dann startet das Backend automatisch und du musst dich nicht darum kümmern!

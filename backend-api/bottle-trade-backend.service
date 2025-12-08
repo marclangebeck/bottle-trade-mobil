@@ -1,0 +1,18 @@
+[Unit]
+Description=Bottle Trade Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=bottleadmin
+WorkingDirectory=/home/bottleadmin/bottle-trade-mobile/backend-api
+Environment="PATH=/home/bottleadmin/bottle-trade-mobile/backend-api/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/bottleadmin/bottle-trade-mobile/backend-api/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+

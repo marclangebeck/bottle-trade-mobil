@@ -111,6 +111,11 @@ export const loginUser = async (emailOrUsername, password, rememberMe = false) =
       throw new Error('Ungültige Anmeldedaten. Bitte prüfen Sie E-Mail/Username und Passwort.');
     }
     
+    // Prüfe ob User gesperrt ist (gilt auch für Admins)
+    if (user.isBlocked === true) {
+      throw new Error('Ihr Konto wurde gesperrt. Bitte kontaktieren Sie den Support für weitere Informationen.');
+    }
+    
     // Prüfe ob User aktiviert ist (nur für nicht-Admin-User)
     if (!user.isAdmin) {
       const isActive = user.isActive || user.status === 'active' || false;
@@ -153,14 +158,17 @@ export const loginUser = async (emailOrUsername, password, rememberMe = false) =
     };
     
   } catch (error) {
-    console.error('❌ Error logging in user:', error);
+    // Verwende console.log statt console.error, um rotes Error-Banner zu vermeiden
+    // Der Fehler wird als Alert angezeigt
+    console.log('ℹ️ Login-Fehler:', error.message || error);
     // Wenn es bereits eine benutzerfreundliche Fehlermeldung ist, weiterwerfen
     if (error.message && (
       error.message.includes('Keine Verbindung') ||
       error.message.includes('Ungültige Anmeldedaten') ||
       error.message.includes('noch nicht aktiviert') ||
       error.message.includes('wartet noch auf Freischaltung') ||
-      error.message.includes('nicht aktiv')
+      error.message.includes('nicht aktiv') ||
+      error.message.includes('gesperrt')
     )) {
       throw error;
     }
@@ -414,6 +422,13 @@ export const restoreSession = async () => {
     const user = await getUser(userId);
     if (!user) {
       console.log('⚠️ User nicht mehr in Firestore gefunden, lösche Session');
+      await AsyncStorage.removeItem('bottle-trade-session');
+      return null;
+    }
+
+    // Prüfe ob User gesperrt ist (gilt auch für Admins)
+    if (user.isBlocked === true) {
+      console.log('⚠️ User ist gesperrt, lösche Session');
       await AsyncStorage.removeItem('bottle-trade-session');
       return null;
     }

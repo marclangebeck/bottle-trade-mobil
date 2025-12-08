@@ -23,10 +23,24 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
       // Direkt zum Dashboard navigieren ohne Alert
       onLogin();
     } catch (error) {
-      console.error('❌ Login failed:', error);
       // Zeige spezifische Fehlermeldung, falls vorhanden
       const errorMessage = error.message || 'Login fehlgeschlagen. Bitte überprüfen Sie Ihre Anmeldedaten.';
-      Alert.alert('Fehler', errorMessage);
+      
+      // Bestimme Titel basierend auf Fehlertyp
+      let alertTitle = 'Fehler';
+      if (errorMessage.includes('gesperrt')) {
+        alertTitle = 'Konto gesperrt';
+      } else if (errorMessage.includes('nicht aktiviert') || errorMessage.includes('wartet noch')) {
+        alertTitle = 'Konto nicht aktiv';
+      } else if (errorMessage.includes('Keine Verbindung')) {
+        alertTitle = 'Verbindungsfehler';
+      }
+      
+      // Nur leichten Log, kein console.error (verhindert rotes Error-Banner)
+      console.log('ℹ️ Login fehlgeschlagen:', errorMessage);
+      
+      // Zeige Alert als Popup
+      Alert.alert(alertTitle, errorMessage);
     }
   };
 

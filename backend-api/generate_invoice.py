@@ -19,21 +19,33 @@ from email import encoders
 from datetime import datetime
 import io
 
-# Firebase initialisieren (falls noch nicht geschehen)
-try:
-    if not firebase_admin._apps:
-        # Verwende Service Account Key aus Umgebungsvariable oder Datei
-        cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH', 'firebase-credentials.json')
-        if os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-            firebase_admin.initialize_app(cred)
-        else:
-            # Fallback: Verwende Default Credentials (z.B. in Cloud)
-            firebase_admin.initialize_app()
-except Exception as e:
-    print(f"⚠️ Firebase bereits initialisiert oder Fehler: {e}")
+# Firebase initialisieren (lazy - nur wenn benötigt)
+def get_firestore_client():
+    """Gibt Firestore-Client zurück, initialisiert Firebase falls nötig"""
+    try:
+        if not firebase_admin._apps:
+            # Verwende Service Account Key aus Umgebungsvariable oder Datei
+            cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH', 'firebase-credentials.json')
+            if os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+                firebase_admin.initialize_app(cred)
+            else:
+                # Fallback: Verwende Default Credentials (z.B. in Cloud)
+                firebase_admin.initialize_app()
+    except Exception as e:
+        print(f"⚠️ Firebase bereits initialisiert oder Fehler: {e}")
+    
+    return firestore.client()
 
-db = firestore.client()
+# db wird lazy initialisiert, wenn benötigt
+_db = None
+
+def get_db():
+    """Lazy initialization von Firestore"""
+    global _db
+    if _db is None:
+        _db = get_firestore_client()
+    return _db
 
 def generate_invoice_pdf(order_data, user_data):
     """Generiert PDF-Rechnung aus Bestell- und User-Daten"""
@@ -257,6 +269,7 @@ async def generate_and_send_invoice(order_id: str):
     """Hauptfunktion: Rechnung generieren und versenden"""
     try:
         # Bestellung aus Firestore abrufen
+        db = get_db()
         order_ref = db.collection('orders').document(order_id)
         order_doc = order_ref.get()
         
@@ -270,6 +283,7 @@ async def generate_and_send_invoice(order_id: str):
         if not user_id:
             raise HTTPException(status_code=400, detail="Keine User-ID in Bestellung gefunden")
         
+        db = get_db()
         user_ref = db.collection('users').where('uid', '==', user_id).limit(1).get()
         if not user_ref:
             raise HTTPException(status_code=404, detail="User nicht gefunden")
