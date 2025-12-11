@@ -145,3 +145,10 @@ scp -i ~/.ssh/admin_web_key -r dist/* bottleadmin@v2202505266333339459.bestsrv.d
 
 **Fertig!** 🎉
 
+
+
+
+
+
+
+

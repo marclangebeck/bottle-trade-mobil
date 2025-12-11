@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -75,6 +75,15 @@ export default function WunschlisteScreen({
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [isCheckingMatches, setIsCheckingMatches] = useState(false);
+  
+  // Refs für TextInputs im Formular
+  const nameInputRef = useRef(null);
+  const wineryInputRef = useRef(null);
+  const vintageInputRef = useRef(null);
+  const regionInputRef = useRef(null);
+  const grapeVarietyInputRef = useRef(null);
+  const notesInputRef = useRef(null);
+  const formScrollViewRef = useRef(null);
 
   useEffect(() => {
     const user = getCurrentUser();
@@ -567,8 +576,12 @@ export default function WunschlisteScreen({
             </TouchableOpacity>
 
             <ScrollView
+              ref={formScrollViewRef}
               style={styles.modalContent}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
+              contentContainerStyle={{ paddingBottom: 40 }}
             >
               <Text style={styles.modalTitle}>
                 {isEditing ? 'Wunsch bearbeiten' : 'Neuer Weinwunsch'}
@@ -581,6 +594,7 @@ export default function WunschlisteScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Weinname (optional)</Text>
                 <TextInput
+                  ref={nameInputRef}
                   style={styles.formInput}
                   placeholder="z.B. Riesling"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -588,6 +602,8 @@ export default function WunschlisteScreen({
                   onChangeText={(text) =>
                     setFormData({ ...formData, name: text })
                   }
+                  returnKeyType="next"
+                  onSubmitEditing={() => wineryInputRef.current?.focus()}
                 />
               </View>
 
@@ -595,6 +611,7 @@ export default function WunschlisteScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Weingut (optional)</Text>
                 <TextInput
+                  ref={wineryInputRef}
                   style={styles.formInput}
                   placeholder="z.B. Weingut Müller"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -602,6 +619,8 @@ export default function WunschlisteScreen({
                   onChangeText={(text) =>
                     setFormData({ ...formData, winery: text })
                   }
+                  returnKeyType="next"
+                  onSubmitEditing={() => vintageInputRef.current?.focus()}
                 />
               </View>
 
@@ -609,6 +628,7 @@ export default function WunschlisteScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Jahrgang (optional)</Text>
                 <TextInput
+                  ref={vintageInputRef}
                   style={styles.formInput}
                   placeholder="z.B. 2020"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -617,6 +637,8 @@ export default function WunschlisteScreen({
                     setFormData({ ...formData, vintage: text })
                   }
                   keyboardType="numeric"
+                  returnKeyType="next"
+                  onSubmitEditing={() => regionInputRef.current?.focus()}
                 />
               </View>
 
@@ -624,6 +646,7 @@ export default function WunschlisteScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Region (optional)</Text>
                 <TextInput
+                  ref={regionInputRef}
                   style={styles.formInput}
                   placeholder="z.B. Mosel"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -631,6 +654,8 @@ export default function WunschlisteScreen({
                   onChangeText={(text) =>
                     setFormData({ ...formData, region: text })
                   }
+                  returnKeyType="next"
+                  onSubmitEditing={() => grapeVarietyInputRef.current?.focus()}
                 />
               </View>
 
@@ -638,6 +663,7 @@ export default function WunschlisteScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Rebsorte (optional)</Text>
                 <TextInput
+                  ref={grapeVarietyInputRef}
                   style={styles.formInput}
                   placeholder="z.B. Riesling"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -645,6 +671,8 @@ export default function WunschlisteScreen({
                   onChangeText={(text) =>
                     setFormData({ ...formData, grapeVariety: text })
                   }
+                  returnKeyType="next"
+                  onSubmitEditing={() => notesInputRef.current?.focus()}
                 />
               </View>
 
@@ -652,6 +680,7 @@ export default function WunschlisteScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Notizen (optional)</Text>
                 <TextInput
+                  ref={notesInputRef}
                   style={[styles.formInput, styles.formTextArea]}
                   placeholder="Zusätzliche Informationen..."
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -661,6 +690,7 @@ export default function WunschlisteScreen({
                   }
                   multiline
                   numberOfLines={4}
+                  returnKeyType="done"
                 />
               </View>
 

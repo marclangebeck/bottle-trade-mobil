@@ -27,6 +27,7 @@ export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState(null); // State für ausgewählte Nachricht
   const scrollViewRef = useRef(null);
+  const messageInputRef = useRef(null);
   
   // WICHTIG: Prüfe, ob der aktuelle User ein Teilnehmer des Chats ist
   // 1-zu-1 Kommunikation darf nicht von Dritten (auch nicht Admins) eingesehen werden
@@ -303,9 +304,9 @@ export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount
           </View>
           
           {/* Chat-Bereich - Scrollt unter dem Header */}
-          <KeyboardAvoidingView 
+          <KeyboardAvoidingView
             style={styles.chatContainer}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            {...getKeyboardAvoidingViewProps()}
           >
             {/* Messages */}
             <ScrollView 
@@ -456,6 +457,7 @@ export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount
             {/* Input */}
             <View style={styles.inputContainer}>
               <TextInput
+                ref={messageInputRef}
                 style={styles.messageInput}
                 value={newMessage}
                 onChangeText={setNewMessage}
@@ -463,6 +465,14 @@ export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount
                 placeholderTextColor="#999"
                 multiline
                 maxLength={500}
+                returnKeyType="send"
+                onSubmitEditing={handleSendMessage}
+                onFocus={() => {
+                  // Scroll zum Ende der Nachrichten, wenn Tastatur erscheint
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 300);
+                }}
               />
               <TouchableOpacity 
                 style={[styles.sendButton, !newMessage.trim() && styles.sendButtonDisabled]}

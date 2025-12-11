@@ -92,3 +92,10 @@ export const calculateSurveyResults = (survey: any, answers: any[]) => {
   };
 };
 
+
+
+
+
+
+
+

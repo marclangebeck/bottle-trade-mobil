@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, Platform, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, Platform, ActivityIndicator, Dimensions } from 'react-native';
 import OptimizedImage from '../components/OptimizedImage';
 import * as ImagePicker from 'expo-image-picker';
 import { addWine } from '../services/database-web';
@@ -26,28 +26,6 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
   const priceInputRef = useRef(null);
   const descriptionInputRef = useRef(null);
   
-  // Funktion zum automatischen Scrollen zum Input-Feld
-  const scrollToInput = (inputRef) => {
-    if (inputRef.current && scrollViewRef.current) {
-      inputRef.current.measureLayout(
-        scrollViewRef.current,
-        (x, y, width, height) => {
-          scrollViewRef.current?.scrollTo({
-            y: y - 50,
-            animated: true,
-          });
-        },
-        () => {
-          inputRef.current.measureInWindow((x, y, width, height) => {
-            scrollViewRef.current?.scrollTo({
-              y: y - 100,
-              animated: true,
-            });
-          });
-        }
-      );
-    }
-  };
 
   const [formData, setFormData] = useState({
     wineName: '',
@@ -406,9 +384,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         wineryInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(wineryInputRef), 100);
                       }}
-                      onFocus={() => scrollToInput(wineNameInputRef)}
                     />
                   </View>
 
@@ -424,9 +400,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         websiteInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(websiteInputRef), 100);
                       }}
-                      onFocus={() => scrollToInput(wineryInputRef)}
                     />
                   </View>
 
@@ -444,9 +418,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         vintageInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(vintageInputRef), 100);
                       }}
-                      onFocus={() => scrollToInput(websiteInputRef)}
                     />
                   </View>
                 </View>
@@ -469,9 +441,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                         returnKeyType="next"
                         onSubmitEditing={() => {
                           regionInputRef.current?.focus();
-                          setTimeout(() => scrollToInput(regionInputRef), 100);
                         }}
-                        onFocus={() => scrollToInput(vintageInputRef)}
                       />
                     </View>
                     
@@ -487,9 +457,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                         returnKeyType="next"
                         onSubmitEditing={() => {
                           grapeVarietyInputRef.current?.focus();
-                          setTimeout(() => scrollToInput(grapeVarietyInputRef), 100);
                         }}
-                        onFocus={() => scrollToInput(regionInputRef)}
                       />
                     </View>
                   </View>
@@ -506,9 +474,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         tasteProfileInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(tasteProfileInputRef), 100);
                       }}
-                      onFocus={() => scrollToInput(grapeVarietyInputRef)}
                     />
                   </View>
 
@@ -524,9 +490,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         priceInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(priceInputRef), 100);
                       }}
-                      onFocus={() => scrollToInput(tasteProfileInputRef)}
                     />
                   </View>
 
@@ -543,9 +507,7 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         descriptionInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(descriptionInputRef), 100);
                       }}
-                      onFocus={() => scrollToInput(priceInputRef)}
                     />
                   </View>
 
@@ -561,7 +523,6 @@ export default function MeinWeinregalBefuellenKIScreen({ onNavigate, onLogout, u
                       multiline
                       numberOfLines={4}
                       returnKeyType="done"
-                      onFocus={() => scrollToInput(descriptionInputRef)}
                     />
                   </View>
                 </View>

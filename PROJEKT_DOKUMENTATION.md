@@ -1,7 +1,7 @@
 # Bottle Trade Mobile - Projektdokumentation
 
-**Stand:** 08. Dezember 2025 (Aktualisiert)  
-**Version:** 1.1  
+**Stand:** 09. Dezember 2025 (Aktualisiert)  
+**Version:** 1.4  
 **Domain:** bottle-trade.de
 
 ---
@@ -61,6 +61,7 @@ Alle Komponenten nutzen **Firebase Firestore** als zentrale Datenbank für Echtz
 - Weingüter-Verwaltung
 - Shop & Bestellungen
 - Newsletter & Umfragen
+- Schwarzes Brett (✅ Bearbeiten/Löschen für Ersteller)
 - Admin-Bereich
 
 ### Admin-Bereich (Mobile-App)
@@ -164,6 +165,15 @@ Vollständige Admin-Funktionen in der Mobile-App:
 - `/send-email` - Allgemeiner E-Mail-Versand
 - `/generate-invoice` - Rechnung generieren
 
+### Konfiguration
+- **Umgebungsvariablen:** Alle sensiblen Daten über `.env` Datei
+  - `DATABASE_URL` - PostgreSQL Verbindungsstring
+  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` - E-Mail-Konfiguration
+  - `FIREBASE_CREDENTIALS_PATH` - Pfad zu Firebase Service Account Key
+- **Datenbank:** `database.py` liest `DATABASE_URL` aus Umgebungsvariablen
+- **Alembic:** `alembic/env.py` verwendet `DATABASE_URL` für Migrations
+- **Sicherheit:** ✅ Keine hardcodierten Credentials mehr im Code
+
 ---
 
 ## 🔐 Authentifizierung
@@ -206,8 +216,15 @@ Vollständige Admin-Funktionen in der Mobile-App:
 1. **Build erstellen:**
    ```bash
    cd ~/bottle-trade-mobile/admin-web
+   ./build.sh
+   # oder
+   ./deploy.sh
+   # oder manuell:
+   export PATH="$HOME/.nvm/versions/node/v20.19.6/bin:$PATH"
    npm run build
    ```
+   - ✅ **Build-Skripte:** `build.sh` und `deploy.sh` setzen automatisch nvm-PATH
+   - ✅ **Automatische Prüfung:** Node.js-Verfügbarkeit wird geprüft
 
 2. **Auf Server deployen:**
    - Lokal: Dateien sind bereits in `dist/`
@@ -243,12 +260,16 @@ bottle-trade-mobile/
 │   │   │   └── surveyAnswers.ts    # Umfrage-Auswertung
 │   │   └── config/         # Firebase-Konfiguration
 │   ├── dist/               # Build-Output
-│   └── deploy.sh           # Deploy-Skript
+│   ├── build.sh            # Build-Skript (✅ nvm-PATH)
+│   └── deploy.sh           # Deploy-Skript (✅ nvm-PATH)
 ├── mobile-app/             # Mobile-App (React Native)
 │   ├── screens/            # Bildschirme
 │   ├── components/         # Komponenten
 │   ├── services/           # Services (Database, Auth)
 │   │   └── testAuth.js     # Authentifizierung (✅ User-Blockierung)
+│   ├── utils/              # Utility-Funktionen
+│   │   └── keyboardUtils.js # Tastaturbehandlung (✅ Next-Button, Auto-Scroll)
+│   ├── start-expo.sh       # Expo-Start-Skript (✅ nvm-PATH, CI-Fix)
 │   └── config/             # Konfiguration
 ├── backend-api/            # Backend-API (FastAPI)
 │   ├── main.py             # Haupt-API
@@ -270,6 +291,44 @@ bottle-trade-mobile/
 3. Build erstellen (`npm run build`)
 4. Auf Server deployen
 5. Browser-Cache leeren (Hard Refresh)
+
+### Mobile-App Entwicklung
+- **Expo starten:**
+  ```bash
+  cd mobile-app
+  ./start-expo.sh
+  # oder manuell:
+  export PATH="$HOME/.nvm/versions/node/v20.19.6/bin:$PATH"
+  unset CI
+  npx expo start --tunnel --clear --port 8081
+  ```
+- **Hinweise:**
+  - nvm muss geladen sein (automatisch in `start-expo.sh`)
+  - CI-Variable muss deaktiviert sein für QR-Code-Anzeige
+  - `@expo/ngrok` muss global installiert sein für Tunnel-Modus
+- **Troubleshooting:**
+  - `npx: Kommando nicht gefunden` → nvm-PATH setzen
+  - Kein QR-Code → `unset CI` ausführen
+  - Tunnel-Fehler → `npm install -g @expo/ngrok@^4.1.0`
+
+### Admin-Web Entwicklung
+- **Build ausführen:**
+  ```bash
+  cd admin-web
+  ./build.sh
+  # oder
+  ./deploy.sh
+  # oder manuell:
+  export PATH="$HOME/.nvm/versions/node/v20.19.6/bin:$PATH"
+  npm run build
+  ```
+- **Hinweise:**
+  - nvm-PATH wird automatisch in `build.sh` und `deploy.sh` gesetzt
+  - Node.js-Verfügbarkeit wird automatisch geprüft
+  - Build-Output: `dist/` Ordner
+- **Troubleshooting:**
+  - `npm: Kommando nicht gefunden` → nvm-PATH setzen oder `./build.sh` verwenden
+  - Build-Fehler → Prüfe TypeScript-Fehler mit `npm run lint`
 
 ### Backup-Strategie
 - **Automatische Backups:** Vor größeren Änderungen
@@ -313,9 +372,11 @@ bottle-trade-mobile/
 
 ---
 
-## 🛠️ Utility-Funktionen (Admin-Web)
+## 🛠️ Utility-Funktionen
 
-### `admin-web/src/utils/notifications.ts`
+### Admin-Web
+
+#### `admin-web/src/utils/notifications.ts`
 Zentrale Funktionen für das Notification-System:
 - **User-Abfragen:**
   - `getAllUsers()`: Alle User abrufen
@@ -328,19 +389,37 @@ Zentrale Funktionen für das Notification-System:
   - `createNotificationsForSystemMessage()`: Notifications für Systemnachrichten
 - **Technik:** Verwendet `writeBatch` für Bulk-Operationen, speichert in `users/{userId}/notifications`
 
-### `admin-web/src/utils/imageUpload.ts`
+#### `admin-web/src/utils/imageUpload.ts`
 Bild-Upload-Funktionen für Firebase Storage:
 - **Funktionen:**
   - `uploadImageToStorage()`: Einzelnes Bild hochladen
   - `uploadProductImages()`: Mehrere Produktbilder hochladen (max. 5)
 - **Features:** Automatische Dateinamen-Generierung, Metadaten-Verwaltung, URL-Rückgabe
 
-### `admin-web/src/utils/surveyAnswers.ts`
+#### `admin-web/src/utils/surveyAnswers.ts`
 Umfrage-Auswertung und Ergebnisberechnung:
 - **Funktionen:**
   - `getSurveyAnswers()`: Sammelt alle Antworten einer Umfrage aus allen User-Subcollections
   - `calculateSurveyResults()`: Berechnet Statistiken (Anzahl, Prozent) pro Option
 - **Verwendung:** Wird für die Ergebnisübersicht in der Umfragen-Verwaltung verwendet
+
+### Mobile-App
+
+#### `mobile-app/utils/keyboardUtils.js`
+Einheitliche Tastaturbehandlung für alle Formular-Screens:
+- **Funktionen:**
+  - `scrollToInput(scrollViewRef, inputRef)`: Scrollt automatisch zum fokussierten Input-Feld
+    - Verwendet `measureLayout` für präzises Scrollen
+    - Fallback-Mechanismus für komplexe Layouts
+    - Offset von 150px für optimale Sichtbarkeit über der Tastatur
+  - `getKeyboardAvoidingViewProps()`: Einheitliche KeyboardAvoidingView-Konfiguration
+    - iOS: `behavior: 'padding'`
+    - Android: `behavior: 'height'`
+- **Verwendung:** Wird in allen Formular-Screens verwendet (Login, Register, Schwarzes Brett, ChatRoom, Weinregal, Wunschliste, Shop, Weinbörse)
+- **Features:**
+  - Next-Button in der Tastatur (`returnKeyType="next"`)
+  - Automatisches Scrollen zum aktiven Feld
+  - Einheitliche Konfiguration für iOS und Android
 
 ---
 
@@ -369,6 +448,9 @@ Umfrage-Auswertung und Ergebnisberechnung:
 - **Firebase-Verbindung:** Prüfe Firebase Console
 - **Build-Fehler:** Prüfe TypeScript-Fehler
 - **Deployment:** Prüfe Nginx-Logs
+- **Expo/npx:** nvm-PATH setzen, CI-Variable deaktivieren
+- **GitHub Push Protection:** Secrets aus Historie entfernen mit `git filter-branch`
+- **Agent Review:** Keine hardcodierten Credentials, Umgebungsvariablen verwenden
 
 ---
 
@@ -420,8 +502,54 @@ Umfrage-Auswertung und Ergebnisberechnung:
   - Korrektes Zurücksetzen beim "+ Neues Produkt" Button
   - Separate States für Create/Edit-Modus
 
+### Entwicklungsumgebung & Sicherheit (08. Dezember 2025)
+- ✅ **Expo/npx Problem behoben:**
+  - nvm-PATH wird automatisch in `start-expo.sh` gesetzt
+  - CI-Variable wird deaktiviert für QR-Code-Anzeige
+  - `@expo/ngrok` global installiert für Tunnel-Modus
+- ✅ **Admin-Web Build-Problem behoben:**
+  - Neues Build-Skript: `admin-web/build.sh`
+  - `deploy.sh` aktualisiert mit nvm-PATH-Setting
+  - Automatische Node.js-Verfügbarkeits-Prüfung
+  - Build erfolgreich durchgeführt
+- ✅ **GitHub Push Protection:**
+  - `firebase-credentials.json` aus Git-Historie entfernt
+  - Datei zur `.gitignore` hinzugefügt (lokal bleibt sie erhalten)
+  - Git-Historie mit `git filter-branch` bereinigt
+- ✅ **Agent Review Warnungen behoben:**
+  - Hardcodierte Datenbank-Credentials entfernt
+  - `database.py` verwendet jetzt `DATABASE_URL` aus Umgebungsvariablen
+  - `alembic.ini` und `alembic/env.py` aktualisiert für Umgebungsvariablen
+  - Best Practice: Alle Credentials über `.env` Dateien
+
 ---
 
-**Letzte Aktualisierung:** 08. Dezember 2025 (Aktualisiert)  
-**Nächste Session:** Verbleibende Module auf Feature-Parität prüfen
+### Mobile-App Verbesserungen (09. Dezember 2025)
+- ✅ **Schwarzes Brett: Bearbeiten/Löschen-Funktionen:**
+  - Bearbeiten- und Löschen-Buttons direkt in Inserat-Karten
+  - Nur sichtbar für Ersteller des Inserats
+  - Vollständige Bearbeitungs- und Löschfunktionalität
+- ✅ **Einheitliche Tastaturbehandlung:**
+  - Neue Utility-Datei: `mobile-app/utils/keyboardUtils.js`
+  - Next-Button in allen Formular-Screens (Login, Register, Schwarzes Brett, ChatRoom, Weinregal, Wunschliste, Shop, Weinbörse)
+  - Automatisches Scrollen zum aktiven Feld
+  - Einheitliche KeyboardAvoidingView-Konfiguration
+  - Verbesserte scrollToInput Funktion mit präzisem Scrollen
+
+
+
+✅ **Tastaturzentrierung im WeinregalBefuellenScreen stabilisiert:**
+
+## Änderungen
+- Robuste Messung vor dem Scrollen (doppeltes requestAnimationFrame + kurzer Delay), damit das Layout nach Keyboard-Änderungen stabil ist.
+- Zielposition auf ca. 38 % der Bildschirmhöhe (Feldmitte leicht oberhalb der Mitte) für einheitlich wahrgenommene Position aller Inputs.
+- Fallbacks bei fehlender Höhenmessung bleiben erhalten, aber mit konsistenter Zielberechnung.
+
+## Offene Punkte
+- Bei Bedarf Feintuning des Zielverhältnisses (`targetCenterRatio`, aktuell 0.38) oder Delay erhöhen, falls bestimmte Geräte langsamer reagieren.
+
+---
+
+**Letzte Aktualisierung:** 11. Dezember 2025, 11:15 (Aktualisiert)  
+**Nächste Session:** Feintuning Tastaturzentrierung (nur falls Nutzer-Feedback)
 

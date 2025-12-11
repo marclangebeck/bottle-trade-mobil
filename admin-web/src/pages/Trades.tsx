@@ -189,3 +189,10 @@ export default function Trades() {
   );
 }
 
+
+
+
+
+
+
+

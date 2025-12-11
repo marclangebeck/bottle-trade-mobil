@@ -567,3 +567,10 @@ admin-web/
 **Erstellt am:** 08. Dezember 2025  
 **Status:** Konzept - Bereit für Umsetzung
 
+
+
+
+
+
+
+

@@ -129,3 +129,10 @@ sudo tail -f /var/log/nginx/error.log
 
 Nach erfolgreicher Konfiguration ist die neue Admin-Web-App unter `https://bottle-trade.de/admin` erreichbar.
 
+
+
+
+
+
+
+

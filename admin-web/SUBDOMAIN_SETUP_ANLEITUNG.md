@@ -195,3 +195,10 @@ scp -i ~/.ssh/admin_web_key -r dist/* bottleadmin@v2202505266333339459.bestsrv.d
 
 Nach erfolgreicher Einrichtung ist die Admin-Web-App unter `https://admin.bottle-trade.de` erreichbar.
 
+
+
+
+
+
+
+

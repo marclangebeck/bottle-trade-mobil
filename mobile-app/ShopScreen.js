@@ -314,6 +314,7 @@ export default function ShopScreen({ onNavigate, onLogout, isLoggedIn = false, i
               onChangeText={setSearchText}
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="search"
             />
             {searchText.length > 0 && (
               <TouchableOpacity

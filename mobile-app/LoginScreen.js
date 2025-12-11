@@ -9,6 +9,8 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true); // Standardmäßig aktiviert
   const passwordRef = useRef(null);
+  const emailRef = useRef(null);
+  const scrollViewRef = useRef(null);
 
   const handleLogin = async () => {
     if (!emailOrUsername || !password) {
@@ -47,8 +49,7 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
   return (
     <KeyboardAvoidingView 
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      {...getKeyboardAvoidingViewProps()}
     >
       {/* Subtiler Hintergrund-Gradient für Glassmorphismus-Effekt */}
       <LinearGradient
@@ -74,6 +75,7 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
       )}
       
       <ScrollView 
+        ref={scrollViewRef}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -92,6 +94,7 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
         <View style={styles.formContainer}>
           <View style={styles.form}>
             <TextInput
+              ref={emailRef}
               style={styles.input}
               placeholder="E-Mail oder Benutzername"
               placeholderTextColor="rgba(255, 255, 255, 0.6)"

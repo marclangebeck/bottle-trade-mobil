@@ -70,3 +70,10 @@ Falls du möchtest, kann ich die Dateien auch direkt übertragen. Sag einfach Be
 
 **Erstellt am:** 08. Dezember 2025
 
+
+
+
+
+
+
+

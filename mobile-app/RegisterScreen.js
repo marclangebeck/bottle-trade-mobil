@@ -39,6 +39,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
   const cityRef = useRef(null);
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
+  const scrollViewRef = useRef(null);
 
   const updateFormData = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -543,11 +544,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
+    <View style={styles.container}>
       {/* Subtiler Hintergrund-Gradient für Glassmorphismus-Effekt */}
       <LinearGradient
         colors={[
@@ -571,11 +568,17 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
         </TouchableOpacity>
       )}
       
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Logo - größer und mittig am oberen Rand */}
         <View style={styles.logoContainer}>
           <OptimizedImage 
@@ -646,7 +649,8 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
         </View>
       </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -660,6 +664,10 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     justifyContent: 'flex-start',
     alignItems: 'center',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+    width: '100%',
   },
   backgroundGradient: {
     position: 'absolute',
@@ -721,7 +729,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingBottom: 40,
   },
   formContainer: {

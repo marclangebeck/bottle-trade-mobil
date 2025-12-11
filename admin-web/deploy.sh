@@ -5,6 +5,9 @@
 
 set -e  # Stoppe bei Fehlern
 
+# Setze nvm-PATH (falls nvm nicht geladen ist)
+export PATH="$HOME/.nvm/versions/node/v20.19.6/bin:$PATH"
+
 echo "🚀 Admin-Web Deployment gestartet..."
 echo ""
 
@@ -12,6 +15,13 @@ echo ""
 if [ ! -f "package.json" ]; then
     echo "❌ Fehler: package.json nicht gefunden!"
     echo "   Bitte führe dieses Skript aus dem admin-web Verzeichnis aus."
+    exit 1
+fi
+
+# Prüfe ob Node.js verfügbar ist
+if ! command -v node &> /dev/null; then
+    echo "❌ Node.js nicht gefunden. Bitte nvm laden:"
+    echo "   source ~/.bashrc"
     exit 1
 fi
 

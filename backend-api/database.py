@@ -1,9 +1,14 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
 
-# Datenbank-URL (anpassen an deinen Server)
-DATABASE_URL = "postgresql://username:password@localhost/bottle_trade_mobile"
+# Lade Umgebungsvariablen
+load_dotenv()
+
+# Datenbank-URL aus Umgebungsvariable (Standard: Platzhalter für lokale Entwicklung)
+DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://username:password@localhost/bottle_trade_mobile')
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

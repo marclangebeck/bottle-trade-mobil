@@ -64,6 +64,12 @@ export default function SchwarzesBrettScreen({
   const [editingInseratId, setEditingInseratId] = useState(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Refs für TextInputs im Formular
+  const titleInputRef = useRef(null);
+  const descriptionInputRef = useRef(null);
+  const contactInfoInputRef = useRef(null);
+  const formScrollViewRef = useRef(null);
 
   const [formData, setFormData] = useState({
     type: 'suche',
@@ -350,6 +356,31 @@ export default function SchwarzesBrettScreen({
               <Text style={styles.cardImageCount}>
                 📷 {item.images.length} Bilder
               </Text>
+            )}
+            {/* Bearbeiten/Löschen Buttons für Owner */}
+            {isOwner && (
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  style={styles.cardActionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleEditInserat(item);
+                  }}
+                >
+                  <Text style={styles.cardActionButtonText}>✏️ Bearbeiten</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.cardActionButton, styles.cardActionButtonDelete]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDeleteInserat(item);
+                  }}
+                >
+                  <Text style={[styles.cardActionButtonText, styles.cardActionButtonTextDelete]}>
+                    🗑️ Löschen
+                  </Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </View>
@@ -691,8 +722,12 @@ export default function SchwarzesBrettScreen({
             </TouchableOpacity>
 
             <ScrollView
+              ref={formScrollViewRef}
               style={styles.formContent}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
+              contentContainerStyle={{ paddingBottom: 40 }}
             >
               <Text style={styles.formTitle}>
                 {isEditing ? 'Inserat bearbeiten' : 'Neues Inserat erstellen'}
@@ -741,6 +776,7 @@ export default function SchwarzesBrettScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Titel *</Text>
                 <TextInput
+                  ref={titleInputRef}
                   style={styles.formInput}
                   placeholder="Titel des Inserats"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -748,6 +784,8 @@ export default function SchwarzesBrettScreen({
                   onChangeText={(text) =>
                     setFormData({ ...formData, title: text })
                   }
+                  returnKeyType="next"
+                  onSubmitEditing={() => descriptionInputRef.current?.focus()}
                 />
               </View>
 
@@ -755,6 +793,7 @@ export default function SchwarzesBrettScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Beschreibung *</Text>
                 <TextInput
+                  ref={descriptionInputRef}
                   style={[styles.formInput, styles.formTextArea]}
                   placeholder="Beschreibung des Inserats"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -764,6 +803,8 @@ export default function SchwarzesBrettScreen({
                   }
                   multiline
                   numberOfLines={4}
+                  returnKeyType="next"
+                  onSubmitEditing={() => contactInfoInputRef.current?.focus()}
                 />
               </View>
 
@@ -771,6 +812,7 @@ export default function SchwarzesBrettScreen({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Kontaktinformationen (optional)</Text>
                 <TextInput
+                  ref={contactInfoInputRef}
                   style={styles.formInput}
                   placeholder="E-Mail, Telefon, etc."
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
@@ -778,6 +820,7 @@ export default function SchwarzesBrettScreen({
                   onChangeText={(text) =>
                     setFormData({ ...formData, contactInfo: text })
                   }
+                  returnKeyType="done"
                 />
               </View>
 
@@ -1160,6 +1203,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.5)',
     marginTop: 4,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  cardActionButton: {
+    flex: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  cardActionButtonDelete: {
+    backgroundColor: 'rgba(244, 67, 54, 0.2)',
+    borderColor: 'rgba(244, 67, 54, 0.4)',
+  },
+  cardActionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  cardActionButtonTextDelete: {
+    color: '#F44336',
   },
   emptyContainer: {
     padding: 40,

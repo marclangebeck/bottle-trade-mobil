@@ -665,6 +665,7 @@ export default function WeinboerseScreen({ onNavigate, onLogout, isAdmin = false
               onChangeText={setSearchText}
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="search"
             />
             {searchText.length > 0 && (
               <TouchableOpacity

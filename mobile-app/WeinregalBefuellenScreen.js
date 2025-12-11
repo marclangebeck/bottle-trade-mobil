@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, ScrollView, Platform, ImageBackground, Modal } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, ScrollView, Platform, ImageBackground, Modal, KeyboardAvoidingView, Keyboard } from 'react-native';
 import OptimizedImage from './components/OptimizedImage';
 import Footer from './Footer';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,12 +11,14 @@ import BottomNavigation from './components/BottomNavigation';
 import ProVersionButton from './components/ProVersionButton';
 import { getAllWinesByOwner } from './services/database-web';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { scrollToInput, getKeyboardAvoidingViewProps } from './utils/keyboardUtils';
 
 export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadCount = 0, isAdmin = false, isLoggedIn = false, isPro = false }) {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [previousWines, setPreviousWines] = useState([]);
   const [dropdownVisible, setDropdownVisible] = useState(false);
   const [isLoadingWines, setIsLoadingWines] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   
   // Refs für Tastatur-Navigation
   const scrollViewRef = useRef(null);
@@ -30,29 +32,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
   const priceInputRef = useRef(null);
   const descriptionInputRef = useRef(null);
   
-  // Funktion zum automatischen Scrollen zum Input-Feld
-  const scrollToInput = (inputRef) => {
-    if (inputRef.current && scrollViewRef.current) {
-      inputRef.current.measureLayout(
-        scrollViewRef.current,
-        (x, y, width, height) => {
-          scrollViewRef.current?.scrollTo({
-            y: y - 50, // 50px Offset oben für bessere Sichtbarkeit
-            animated: true,
-          });
-        },
-        () => {
-          // Fallback: Wenn measureLayout fehlschlägt, verwende measureInWindow
-          inputRef.current.measureInWindow((x, y, width, height) => {
-            scrollViewRef.current?.scrollTo({
-              y: y - 100, // Offset für bessere Sichtbarkeit
-              animated: true,
-            });
-          });
-        }
-      );
-    }
-  };
+  // Verwende die Utility-Funktion für Auto-Scroll
   const [formData, setFormData] = useState({
     wineName: '',
     winery: '',
@@ -69,6 +49,16 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
   // Lade bereits eingestellte Weine beim Öffnen des Screens
   useEffect(() => {
     loadPreviousWines();
+  }, []);
+
+  // Keyboard-Listener, um den unteren Balken zu minimieren und Navigation auszublenden
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+    };
   }, []);
 
   const loadPreviousWines = async () => {
@@ -361,6 +351,9 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
     }
   };
 
+  const keyboardProps = getKeyboardAvoidingViewProps(60); // nochmals geringer Offset
+  const dynamicPaddingBottom = isKeyboardVisible ? 2 : 150; // nochmals weniger Leerraum bei offener Tastatur
+
   return (
     <View style={styles.container}>
       {/* StatusBar-Ersatz für iPhone */}
@@ -369,19 +362,19 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
         backgroundColor: '#2c2c2c',
         width: '100%',
       }} />
-      <View style={styles.container}>
-        <DynamicHamburgerMenu 
-          onNavigate={onNavigate} 
-          isLoggedIn={true} 
-          onLogout={onLogout} 
-          isAdmin={isAdmin} 
-          unreadCount={unreadCount}
-          renderButton={false}
-          externalMenuVisible={isMenuVisible}
-          onMenuToggle={setIsMenuVisible}
-        />
-        
-        <View style={styles.contentContainer}>
+      
+      <DynamicHamburgerMenu 
+        onNavigate={onNavigate} 
+        isLoggedIn={true} 
+        onLogout={onLogout} 
+        isAdmin={isAdmin} 
+        unreadCount={unreadCount}
+        renderButton={false}
+        externalMenuVisible={isMenuVisible}
+        onMenuToggle={setIsMenuVisible}
+      />
+      
+      <View style={styles.contentContainer}>
           {/* Logo und Schriftzug mit Hamburger-Menü und Profil-Icon */}
           <View style={styles.logoHeaderContainer}>
             {/* Hamburger-Menü links */}
@@ -437,14 +430,19 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
           </View>
 
           {/* Content */}
-          <ScrollView 
-            ref={scrollViewRef}
-            style={styles.content} 
-            contentContainerStyle={styles.scrollContentContainer}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
+          <KeyboardAvoidingView 
+            style={[styles.content, { backgroundColor: '#2c2c2c' }]}
+            {...keyboardProps}
           >
+            <ScrollView 
+              ref={scrollViewRef}
+              style={[styles.content, { backgroundColor: '#2c2c2c' }]} 
+              contentContainerStyle={[styles.scrollContentContainer, { paddingBottom: dynamicPaddingBottom }]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              nestedScrollEnabled={true}
+            >
             <View style={styles.dashboardContainer}>
               <Text style={styles.dashboardSubtitle}>Machen Sie bitte Angaben zu dem Wein, den Sie tauschen möchten.</Text>
 
@@ -507,11 +505,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                       placeholder="z.B. Riesling Spätlese"
                       placeholderTextColor="#999999"
                       returnKeyType="next"
-                      onSubmitEditing={() => {
-                        wineryInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(wineryInputRef), 100);
-                      }}
-                      onFocus={() => scrollToInput(wineNameInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, wineNameInputRef)}
+                      onSubmitEditing={() => wineryInputRef.current?.focus()}
                     />
                   </View>
 
@@ -525,11 +520,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                       placeholder="z.B. Weingut Müller"
                       placeholderTextColor="#999999"
                       returnKeyType="next"
-                      onSubmitEditing={() => {
-                        websiteInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(websiteInputRef), 100);
-                      }}
-                      onFocus={() => scrollToInput(wineryInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, wineryInputRef)}
+                      onSubmitEditing={() => websiteInputRef.current?.focus()}
                     />
                   </View>
 
@@ -545,11 +537,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                       keyboardType="url"
                       autoCapitalize="none"
                       returnKeyType="next"
-                      onSubmitEditing={() => {
-                        vintageInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(vintageInputRef), 100);
-                      }}
-                      onFocus={() => scrollToInput(websiteInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, websiteInputRef)}
+                      onSubmitEditing={() => vintageInputRef.current?.focus()}
                     />
                   </View>
                 </View>
@@ -570,11 +559,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                         placeholderTextColor="#999999"
                         keyboardType="numeric"
                         returnKeyType="next"
-                        onSubmitEditing={() => {
-                          regionInputRef.current?.focus();
-                          setTimeout(() => scrollToInput(regionInputRef), 100);
-                        }}
-                        onFocus={() => scrollToInput(vintageInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, vintageInputRef)}
+                        onSubmitEditing={() => regionInputRef.current?.focus()}
                       />
                     </View>
                     
@@ -588,11 +574,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                         placeholder="z.B. Mosel"
                         placeholderTextColor="#999999"
                         returnKeyType="next"
-                        onSubmitEditing={() => {
-                          grapeVarietyInputRef.current?.focus();
-                          setTimeout(() => scrollToInput(grapeVarietyInputRef), 100);
-                        }}
-                        onFocus={() => scrollToInput(regionInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, regionInputRef)}
+                        onSubmitEditing={() => grapeVarietyInputRef.current?.focus()}
                       />
                     </View>
                   </View>
@@ -607,11 +590,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                       placeholder="z.B. Riesling"
                       placeholderTextColor="#999999"
                       returnKeyType="next"
-                      onSubmitEditing={() => {
-                        tasteProfileInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(tasteProfileInputRef), 100);
-                      }}
-                      onFocus={() => scrollToInput(grapeVarietyInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, grapeVarietyInputRef)}
+                      onSubmitEditing={() => tasteProfileInputRef.current?.focus()}
                     />
                   </View>
 
@@ -625,11 +605,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                       placeholder="z.B. trocken, halbtrocken, süß"
                       placeholderTextColor="#999999"
                       returnKeyType="next"
-                      onSubmitEditing={() => {
-                        priceInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(priceInputRef), 100);
-                      }}
-                      onFocus={() => scrollToInput(tasteProfileInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, tasteProfileInputRef)}
+                      onSubmitEditing={() => priceInputRef.current?.focus()}
                     />
                   </View>
 
@@ -644,11 +621,8 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                       placeholderTextColor="#999999"
                       keyboardType="decimal-pad"
                       returnKeyType="next"
-                      onSubmitEditing={() => {
-                        descriptionInputRef.current?.focus();
-                        setTimeout(() => scrollToInput(descriptionInputRef), 100);
-                      }}
-                      onFocus={() => scrollToInput(priceInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, priceInputRef)}
+                      onSubmitEditing={() => descriptionInputRef.current?.focus()}
                     />
                   </View>
 
@@ -664,7 +638,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                       multiline
                       numberOfLines={4}
                       returnKeyType="done"
-                      onFocus={() => scrollToInput(descriptionInputRef)}
+                      onFocus={() => scrollToInput(scrollViewRef, descriptionInputRef)}
                     />
                   </View>
                 </View>
@@ -728,26 +702,25 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
                 </TouchableOpacity>
               </View>
             </View>
-          </ScrollView>
-        </View>
-        <Footer />
+            </ScrollView>
+          </KeyboardAvoidingView>
       </View>
-      
-      {/* Fixed Bottom Navigation */}
-      <View style={styles.bottomNavContainer}>
+      <Footer />
+      {/* Bottom Navigation - ausblenden, wenn Tastatur sichtbar, um Platz zu schaffen */}
+      {!isKeyboardVisible && (
         <BottomNavigation
           onNavigate={onNavigate}
           isLoggedIn={isLoggedIn}
           unreadCount={unreadCount}
         />
-        
-        {/* ProVersion Button */}
-        <ProVersionButton 
-          onNavigate={onNavigate}
-          isPro={isPro}
-          isLoggedIn={isLoggedIn}
-        />
-      </View>
+      )}
+      
+      {/* ProVersion Button */}
+      <ProVersionButton 
+        onNavigate={onNavigate}
+        isPro={isPro}
+        isLoggedIn={isLoggedIn}
+      />
     </View>
   );
 }
@@ -756,6 +729,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#2c2c2c',
+  },
+  keyboardAvoidingWrapper: {
+    flex: 1,
   },
   contentContainer: {
     flex: 1,
@@ -979,7 +955,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContentContainer: {
-    paddingBottom: 150, // Genug Platz für Footer und BottomNavigation (erhöht für Sicherheit)
+    paddingBottom: 200, // Basiswert; wird dynamisch überschrieben
     flexGrow: 1,
   },
   dashboardContainer: {
@@ -1160,10 +1136,6 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     color: '#333333',
     fontSize: 15,
-  },
-  bottomNavContainer: {
-    position: 'relative',
-    zIndex: 1,
   },
   imageGallery: {
     marginVertical: 10,
