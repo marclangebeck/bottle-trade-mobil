@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import OptimizedImage from '../components/OptimizedImage';
 import { BACKEND_API_URL } from '../config/api';
@@ -9,6 +9,17 @@ export default function EmailConfirmationScreen({ token, onConfirm, onNavigate }
   const [confirmationToken, setConfirmationToken] = useState(token || '');
   const [isConfirming, setIsConfirming] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  // Keyboard-Listener, um den unteren Bereich zu minimieren
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+    };
+  }, []);
 
   useEffect(() => {
     // Wenn Token per Deep Link übergeben wurde, automatisch bestätigen
@@ -92,11 +103,7 @@ export default function EmailConfirmationScreen({ token, onConfirm, onNavigate }
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
+    <View style={styles.container}>
       <LinearGradient
         colors={['#2c2c2c', '#1a1a1a', '#2c2c2c']}
         start={{ x: 0, y: 0 }}
@@ -104,10 +111,15 @@ export default function EmailConfirmationScreen({ token, onConfirm, onNavigate }
         style={styles.backgroundGradient}
       />
       
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#2c2c2c' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 10}
       >
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: isKeyboardVisible ? 2 : 40 }]}
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.logoContainer}>
           <OptimizedImage
             source={require('../assets/images/Logo_white.png')}
@@ -150,8 +162,9 @@ export default function EmailConfirmationScreen({ token, onConfirm, onNavigate }
             Der Token wurde Ihnen per E-Mail zugesendet. Falls Sie keine E-Mail erhalten haben, prüfen Sie bitte Ihren Spam-Ordner.
           </Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 

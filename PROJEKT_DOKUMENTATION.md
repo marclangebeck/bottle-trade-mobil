@@ -1,7 +1,7 @@
 # Bottle Trade Mobile - Projektdokumentation
 
-**Stand:** 09. Dezember 2025 (Aktualisiert)  
-**Version:** 1.4  
+**Stand:** 11. Dezember 2025 (Aktualisiert)  
+**Version:** 1.6  
 **Domain:** bottle-trade.de
 
 ---
@@ -59,9 +59,10 @@ Alle Komponenten nutzen **Firebase Firestore** als zentrale Datenbank für Echtz
 - Chat-System
 - Wunschliste
 - Weingüter-Verwaltung
+- Weinhandel-Verwaltung
 - Shop & Bestellungen
 - Newsletter & Umfragen
-- Schwarzes Brett (✅ Bearbeiten/Löschen für Ersteller)
+- Schwarzes Brett (✅ Bearbeiten/Löschen für Ersteller, ✅ Admin-Löschung)
 - Admin-Bereich
 
 ### Admin-Bereich (Mobile-App)
@@ -70,6 +71,7 @@ Vollständige Admin-Funktionen in der Mobile-App:
 - User-Verwaltung
 - Wein-Verwaltung
 - Weingüter-Verwaltung
+- Weinhandel-Verwaltung
 - Umfragen-Verwaltung
 - Newsletter-Verwaltung
 - System-Nachrichten
@@ -102,6 +104,13 @@ Vollständige Admin-Funktionen in der Mobile-App:
   - User-Datenbank bereinigen
 - **Wein-Verwaltung** (`/wines`)
 - **Weingüter-Verwaltung** (`/wineries`)
+- **Weinhandel-Verwaltung** (`/winehandel`):
+  - ✅ **Neue Seite** für Weinhandel-Unternehmen-Verwaltung
+  - ✅ **Filter und Suche** nach Name, Owner, Region
+  - ✅ **Detail-Ansicht** mit Bildern
+  - ✅ **Verifizierungs-Funktion** für Weinhandel-Unternehmen
+  - ✅ **Lösch-Funktion** für alle Unternehmen (nur Admin)
+  - ✅ **Cleanup-Funktion** für verwaiste Unternehmen
 - **Daten-Verwaltung** (`/data-management`)
 - **Umfragen-Verwaltung** (`/surveys`):
   - Umfrage erstellen, bearbeiten, löschen
@@ -121,7 +130,13 @@ Vollständige Admin-Funktionen in der Mobile-App:
   - Produkt erstellen, bearbeiten, löschen
   - Lagerbestand-Verwaltung
   - Produkt-Status (aktiv/inaktiv)
-- **Bestellungen-Verwaltung** (`/orders`)
+- **Bestellungen-Verwaltung** (`/orders`):
+  - ✅ **Lösch-Funktion** für Bestellungen
+- **Schwarzes Brett-Verwaltung** (`/blackboard`):
+  - ✅ **Neue Seite** für Inserat-Verwaltung
+  - ✅ **Filter und Suche** nach Typ und Inhalt
+  - ✅ **Detail-Ansicht** mit Bildern
+  - ✅ **Lösch-Funktion** für alle Inserate (nur Admin)
 - **Trade-Verwaltung** (`/trades`)
 
 #### ⏳ In Arbeit
@@ -198,6 +213,7 @@ Vollständige Admin-Funktionen in der Mobile-App:
 - `users` - User-Daten
 - `wines` - Weine
 - `wineries` - Weingüter
+- `winehandel` - Weinhandel-Unternehmen
 - `chats` - Chats und Hinweise
 - `tradeRequests` - Tauschanfragen
 - `surveys` - Umfragen
@@ -253,6 +269,8 @@ bottle-trade-mobile/
 ├── admin-web/              # Admin-Web (React + TypeScript)
 │   ├── src/
 │   │   ├── pages/          # Seiten
+│   │   │   ├── Winehandel.tsx      # Weinhandel-Verwaltung
+│   │   │   └── Users.tsx            # User-Verwaltung (✅ Weinhandel-Toggle)
 │   │   ├── components/     # Komponenten
 │   │   ├── utils/          # Utility-Funktionen
 │   │   │   ├── notifications.ts    # Notification-System
@@ -264,9 +282,12 @@ bottle-trade-mobile/
 │   └── deploy.sh           # Deploy-Skript (✅ nvm-PATH)
 ├── mobile-app/             # Mobile-App (React Native)
 │   ├── screens/            # Bildschirme
+│   │   ├── WeinhandelScreen.js      # Weinhandel-Anzeige
+│   │   └── AdminWeinhandelScreen.js # Weinhandel-Verwaltung (Admin)
 │   ├── components/         # Komponenten
 │   ├── services/           # Services (Database, Auth)
 │   │   └── testAuth.js     # Authentifizierung (✅ User-Blockierung)
+│   │   └── database-web.js # Database-Funktionen (✅ Weinhandel-Funktionen)
 │   ├── utils/              # Utility-Funktionen
 │   │   └── keyboardUtils.js # Tastaturbehandlung (✅ Next-Button, Auto-Scroll)
 │   ├── start-expo.sh       # Expo-Start-Skript (✅ nvm-PATH, CI-Fix)
@@ -353,6 +374,7 @@ bottle-trade-mobile/
 | User-Verwaltung | ✅ | ✅ | ✅ Vollständig (1:1) |
 | Wein-Verwaltung | ✅ | ✅ | ⚠️ Prüfung nötig |
 | Weingüter-Verwaltung | ✅ | ✅ | ⚠️ Prüfung nötig |
+| Weinhandel-Verwaltung | ✅ | ✅ | ✅ Vollständig (Verifizierung + Verwaltung) |
 | Umfragen | ✅ | ✅ | ✅ Verbessert (Notifications + Ergebnisse) |
 | Newsletter | ✅ | ✅ | ✅ Verbessert (Notifications) |
 | System-Nachrichten | ✅ | ✅ | ✅ Verbessert (Notifications) |
@@ -367,6 +389,7 @@ bottle-trade-mobile/
 - ✅ Notifications für Umfragen, Newsletter, Systemnachrichten
 - ✅ Umfrage-Ergebnisübersicht im Admin-Web
 - ✅ Shop: Kategorien entfernt, Bild-Upload, Bearbeiten-Funktion
+- ✅ Weinhandel-Feature: Vollständige Implementierung in App und Web
 
 **Nächster Schritt:** Verbleibende Module auf vollständige Feature-Parität prüfen und fehlende Funktionen implementieren.
 
@@ -404,6 +427,20 @@ Umfrage-Auswertung und Ergebnisberechnung:
 - **Verwendung:** Wird für die Ergebnisübersicht in der Umfragen-Verwaltung verwendet
 
 ### Mobile-App
+
+#### `mobile-app/services/database-web.js` - Weinhandel-Funktionen
+Database-Funktionen für Weinhandel-Unternehmen:
+- **Abfragen:**
+  - `getWinehandelByOwner(ownerId)`: Holt Weinhandel nach Owner-ID
+  - `getVerifiedWinehandel()`: Holt alle verifizierten Weinhandel-Unternehmen
+  - `getAllWinehandel()`: Holt alle Weinhandel-Unternehmen (für Admins)
+- **Subscriptions:**
+  - `subscribeVerifiedWinehandel(callback)`: Echtzeit-Updates für verifizierte Unternehmen
+- **Verwaltung:**
+  - `updateWinehandel(winehandelId, updates)`: Aktualisiert Weinhandel-Unternehmen
+  - `deleteWinehandel(winehandelId)`: Löscht Weinhandel-Unternehmen
+  - `verifyWinehandel(winehandelId, isVerified)`: Verifiziert/entfernt Verifizierung
+- **Technik:** Verwendet Firestore Collection `winehandel`, ähnlich wie Weingüter
 
 #### `mobile-app/utils/keyboardUtils.js`
 Einheitliche Tastaturbehandlung für alle Formular-Screens:
@@ -463,6 +500,39 @@ Einheitliche Tastaturbehandlung für alle Formular-Screens:
 ---
 
 ## 🆕 Neueste Änderungen (Dezember 2025)
+
+### Weinhandel-Feature (11. Dezember 2025)
+- ✅ **Weinhandel-Feature vollständig implementiert:**
+  - Neuer Button "Weinhandel" im CommunityScreen
+  - WeinhandelScreen für Anzeige verifizierter Unternehmen
+  - Toggle "Ich bin ein Weinhandel" in der Registrierung
+  - AdminWeinhandelScreen für Verwaltung (Mobile-App)
+  - Weinhandel-Verwaltungsseite im Admin-Web (`/winehandel`)
+  - Verifizierungs-Funktion in User-Verwaltung (App + Web)
+  - Database-Funktionen: `getVerifiedWinehandel`, `getAllWinehandel`, `verifyWinehandel`, etc.
+  - Firestore Collection `winehandel` für Unternehmen-Daten
+  - User-Felder: `isWinehandel`, `isWinehandelVerified`
+  - Synchronisation: Verifizierung im User synchronisiert mit Weinhandel-Profil
+
+### Admin-Web & Mobile-App Verbesserungen (11. Dezember 2025)
+- ✅ **Bestellungen-Löschung:** Admin-Web unterstützt jetzt das Löschen von Bestellungen
+- ✅ **Schwarzes Brett Admin-Verwaltung:** 
+  - Neue Admin-Web-Seite `/blackboard` für Inserat-Verwaltung
+  - Filter, Suche und Detail-Ansicht mit Bildern
+  - Lösch-Funktion für alle Inserate
+- ✅ **Schwarzes Brett Admin-Löschung in App:** Admins können jetzt alle Inserate löschen (nicht nur eigene)
+- ✅ **Keyboard-Handling Optimierung:**
+  - KeyboardAvoidingView-Struktur verbessert (View als Container, kein zusätzlicher Balken)
+  - Dynamisches Padding: 2px bei offener Tastatur, 40px bei geschlossener
+  - KeyboardAvoidingView-Offset auf 10 reduziert für maximalen sichtbaren Bereich
+  - Keyboard-Listener für alle Screens mit TextInputs
+  - Angepasste Screens: LoginScreen, RegisterScreen, ChatRoomScreen, EmailConfirmationScreen, InfoScreen, WeinregalBefuellenScreen
+- ✅ **Keyboard-Handling Fehlerbehebung:**
+  - Fehlende Imports für `getKeyboardAvoidingViewProps` behoben
+  - Deprecated Deep Import entfernt
+  - Export-Struktur verbessert für Hot Reload
+
+### Mobile-App Verbesserungen (09. Dezember 2025)
 
 ### User-Management & Authentifizierung
 - ✅ **User-Blockierung:** Funktioniert jetzt korrekt - gesperrte User können sich nicht mehr in der App einloggen
@@ -550,6 +620,6 @@ Einheitliche Tastaturbehandlung für alle Formular-Screens:
 
 ---
 
-**Letzte Aktualisierung:** 11. Dezember 2025, 11:15 (Aktualisiert)  
-**Nächste Session:** Feintuning Tastaturzentrierung (nur falls Nutzer-Feedback)
+**Letzte Aktualisierung:** 11. Dezember 2025, 17:19 (Aktualisiert)  
+**Nächste Session:** Testing der Weinhandel-Funktionen und weitere Optimierungen
 

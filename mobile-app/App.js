@@ -41,6 +41,7 @@ import AdminTradesScreen from './screens/AdminTradesScreen';
 import AdminWinesScreen from './screens/AdminWinesScreen';
 import AdminUsersScreen from './screens/AdminUsersScreen';
 import AdminWineriesScreen from './screens/AdminWineriesScreen';
+import AdminWeinhandelScreen from './screens/AdminWeinhandelScreen';
 import AdminHintsScreen from './screens/AdminHintsScreen';
 import AdminDataManagementScreen from './screens/AdminDataManagementScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
@@ -61,6 +62,7 @@ import AppEmpfehlenScreen from './screens/AppEmpfehlenScreen';
 import RundgangScreen from './screens/RundgangScreen';
 import SchwarzesBrettScreen from './screens/SchwarzesBrettScreen';
 import WeingueterScreen from './screens/WeingueterScreen';
+import WeinhandelScreen from './screens/WeinhandelScreen';
 import StatistikScreen from './screens/StatistikScreen';
 import HeaderTestScreen from './screens/HeaderTestScreen';
 import WarenkorbScreen from './screens/WarenkorbScreen';
@@ -5629,6 +5631,25 @@ useEffect(() => {
           );
         }
 
+        if (currentScreen === 'weinhandel') {
+          return (
+            <>
+              <RNStatusBar barStyle="light-content" backgroundColor="#2c2c2c" />
+              <StatusBar style="light" />
+              <WeinhandelScreen
+                onNavigate={handleNavigate}
+                onLogout={handleLogout}
+                isAdmin={isAdmin}
+                unreadCount={unreadCount}
+                chats={chats}
+                isLoggedIn={isLoggedIn}
+                wishlistMatchCount={wishlistMatchCount}
+                isPro={isPro}
+              />
+            </>
+          );
+        }
+
         if (currentScreen === 'statistiken') {
           return (
             <>
@@ -6057,6 +6078,18 @@ useEffect(() => {
         if (currentScreen === 'admin-wineries') {
           return (
             <AdminWineriesScreen
+              onNavigate={handleNavigate}
+              onLogout={handleLogout}
+              isLoggedIn={isLoggedIn}
+              unreadCount={unreadCount}
+              isPro={isPro}
+            />
+          );
+        }
+
+        if (currentScreen === 'admin-weinhandel') {
+          return (
+            <AdminWeinhandelScreen
               onNavigate={handleNavigate}
               onLogout={handleLogout}
               isLoggedIn={isLoggedIn}

@@ -178,14 +178,19 @@ export default function SchwarzesBrettScreen({
 
   const handleDeleteInserat = async (inserat) => {
     const currentUser = getCurrentUser();
-    if (inserat.userId !== currentUser?.uid) {
+    const isOwner = inserat.userId === currentUser?.uid;
+    const canDelete = isOwner || isAdmin;
+
+    if (!canDelete) {
       Alert.alert('Fehler', 'Du kannst nur deine eigenen Inserate löschen.');
       return;
     }
 
     Alert.alert(
       'Inserat löschen',
-      'Möchtest du dieses Inserat wirklich löschen?',
+      isAdmin && !isOwner
+        ? 'Möchtest du dieses Inserat als Admin wirklich löschen?'
+        : 'Möchtest du dieses Inserat wirklich löschen?',
       [
         { text: 'Abbrechen', style: 'cancel' },
         {
@@ -313,6 +318,8 @@ export default function SchwarzesBrettScreen({
   const renderInseratCard = ({ item }) => {
     const currentUser = getCurrentUser();
     const isOwner = item.userId === currentUser?.uid;
+    const canEdit = isOwner;
+    const canDelete = isOwner || isAdmin;
     const firstImage = item.images && item.images.length > 0 ? item.images[0] : null;
 
     return (
@@ -357,29 +364,33 @@ export default function SchwarzesBrettScreen({
                 📷 {item.images.length} Bilder
               </Text>
             )}
-            {/* Bearbeiten/Löschen Buttons für Owner */}
-            {isOwner && (
+            {/* Bearbeiten/Löschen Buttons für Owner oder Admin */}
+            {(canEdit || canDelete) && (
               <View style={styles.cardActions}>
-                <TouchableOpacity
-                  style={styles.cardActionButton}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleEditInserat(item);
-                  }}
-                >
-                  <Text style={styles.cardActionButtonText}>✏️ Bearbeiten</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.cardActionButton, styles.cardActionButtonDelete]}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleDeleteInserat(item);
-                  }}
-                >
-                  <Text style={[styles.cardActionButtonText, styles.cardActionButtonTextDelete]}>
-                    🗑️ Löschen
-                  </Text>
-                </TouchableOpacity>
+                {canEdit && (
+                  <TouchableOpacity
+                    style={styles.cardActionButton}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleEditInserat(item);
+                    }}
+                  >
+                    <Text style={styles.cardActionButtonText}>✏️ Bearbeiten</Text>
+                  </TouchableOpacity>
+                )}
+                {canDelete && (
+                  <TouchableOpacity
+                    style={[styles.cardActionButton, styles.cardActionButtonDelete]}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleDeleteInserat(item);
+                    }}
+                  >
+                    <Text style={[styles.cardActionButtonText, styles.cardActionButtonTextDelete]}>
+                      🗑️ Löschen
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -665,33 +676,46 @@ export default function SchwarzesBrettScreen({
                     </View>
                   )}
 
-                  {/* Bearbeiten/Löschen Buttons (nur für Owner) */}
-                  {getCurrentUser()?.uid === selectedInserat.userId && (
-                    <View style={styles.modalActions}>
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={() => {
-                          setIsDetailModalVisible(false);
-                          handleEditInserat(selectedInserat);
-                        }}
-                      >
-                        <Text style={styles.actionButtonText}>✏️ Bearbeiten</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.actionButtonDelete]}
-                        onPress={() => handleDeleteInserat(selectedInserat)}
-                      >
-                        <Text
-                          style={[
-                            styles.actionButtonText,
-                            styles.actionButtonTextDelete,
-                          ]}
-                        >
-                          🗑️ Löschen
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                  {/* Bearbeiten/Löschen Buttons (für Owner oder Admin) */}
+                  {(() => {
+                    const currentUser = getCurrentUser();
+                    const isOwner = currentUser?.uid === selectedInserat.userId;
+                    const canEdit = isOwner;
+                    const canDelete = isOwner || isAdmin;
+                    
+                    if (!canEdit && !canDelete) return null;
+                    
+                    return (
+                      <View style={styles.modalActions}>
+                        {canEdit && (
+                          <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => {
+                              setIsDetailModalVisible(false);
+                              handleEditInserat(selectedInserat);
+                            }}
+                          >
+                            <Text style={styles.actionButtonText}>✏️ Bearbeiten</Text>
+                          </TouchableOpacity>
+                        )}
+                        {canDelete && (
+                          <TouchableOpacity
+                            style={[styles.actionButton, styles.actionButtonDelete]}
+                            onPress={() => handleDeleteInserat(selectedInserat)}
+                          >
+                            <Text
+                              style={[
+                                styles.actionButtonText,
+                                styles.actionButtonTextDelete,
+                              ]}
+                            >
+                              🗑️ Löschen
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })()}
                 </View>
               </ScrollView>
             )}

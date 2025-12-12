@@ -30,6 +30,8 @@ interface User {
   subscriptionType?: 'basic' | 'pro';
   isWinery?: boolean;
   isWineryVerified?: boolean;
+  isWinehandel?: boolean;
+  isWinehandelVerified?: boolean;
   createdAt?: any;
 }
 
@@ -353,6 +355,70 @@ export default function Users() {
     }
   };
 
+  const handleVerifyWinehandel = async (user: User) => {
+    const isVerified = user.isWinehandelVerified || false;
+    const action = isVerified ? 'Verifizierung entfernen' : 'als Weinhandel verifizieren';
+
+    if (!confirm(`Möchten Sie den User "${user.username || user.email}" wirklich ${action}?`)) {
+      return;
+    }
+
+    try {
+      const userId = user.uid || user.id;
+      const userQuery = query(collection(db, 'users'), where('uid', '==', userId));
+      const querySnapshot = await getDocsQuery(userQuery);
+
+      if (querySnapshot.empty) {
+        await updateDoc(doc(db, 'users', user.id), {
+          isWinehandelVerified: !isVerified,
+        });
+      } else {
+        const userDoc = querySnapshot.docs[0];
+        await updateDoc(doc(db, 'users', userDoc.id), {
+          isWinehandelVerified: !isVerified,
+        });
+      }
+
+      // Wenn verifiziert wird, verifiziere auch das Weinhandel-Profil (falls vorhanden)
+      if (!isVerified) {
+        const winehandelQuery = query(collection(db, 'winehandel'), where('ownerId', '==', userId));
+        const winehandelSnapshot = await getDocsQuery(winehandelQuery);
+        if (!winehandelSnapshot.empty) {
+          const winehandelDoc = winehandelSnapshot.docs[0];
+          await updateDoc(doc(db, 'winehandel', winehandelDoc.id), {
+            isVerified: true,
+          });
+        }
+      } else {
+        // Wenn Verifizierung entfernt wird, entferne auch vom Weinhandel-Profil
+        const winehandelQuery = query(collection(db, 'winehandel'), where('ownerId', '==', userId));
+        const winehandelSnapshot = await getDocsQuery(winehandelQuery);
+        if (!winehandelSnapshot.empty) {
+          const winehandelDoc = winehandelSnapshot.docs[0];
+          await updateDoc(doc(db, 'winehandel', winehandelDoc.id), {
+            isVerified: false,
+          });
+        }
+      }
+
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, isWinehandelVerified: !isVerified } : u))
+      );
+
+      if (userDetailsData && userDetailsData.user.id === user.id) {
+        setUserDetailsData((prev) => ({
+          ...prev!,
+          user: { ...prev!.user, isWinehandelVerified: !isVerified },
+        }));
+      }
+
+      alert(`User wurde ${!isVerified ? 'als Weinhandel verifiziert' : 'Verifizierung entfernt'}!`);
+    } catch (error) {
+      console.error('Fehler beim Verifizieren:', error);
+      alert(`User konnte nicht ${action} werden.`);
+    }
+  };
+
   const handleDeleteUser = async (user: User) => {
     if (
       !confirm(
@@ -606,6 +672,9 @@ export default function Users() {
             {users.filter((u) => u.isWinery).length > 0 && ` • ${users.filter((u) => u.isWinery).length} Weingut(e)`}
             {users.filter((u) => u.isWinery && u.isWineryVerified).length > 0 &&
               ` • ${users.filter((u) => u.isWinery && u.isWineryVerified).length} Verifiziert`}
+            {users.filter((u) => u.isWinehandel).length > 0 && ` • ${users.filter((u) => u.isWinehandel).length} Weinhandel`}
+            {users.filter((u) => u.isWinehandel && u.isWinehandelVerified).length > 0 &&
+              ` • ${users.filter((u) => u.isWinehandel && u.isWinehandelVerified).length} Verifiziert`}
             {users.filter((u) => !u.isAdmin && (u.isActive || u.status === 'active')).length > 0 &&
               ` • ${users.filter((u) => !u.isAdmin && (u.isActive || u.status === 'active')).length} Aktiv`}
             {users.filter((u) => !u.isAdmin && (!u.isActive && u.status !== 'active')).length > 0 &&
@@ -671,6 +740,11 @@ export default function Users() {
                       {user.isWineryVerified ? '🏰 ✅ Verifiziert' : '🏰 ⏳ Nicht verifiziert'}
                     </span>
                   )}
+                  {user.isWinehandel && (
+                    <span className={`ml-2 px-2 py-0.5 text-white text-xs rounded ${user.isWinehandelVerified ? 'bg-green-600' : 'bg-yellow-600'}`}>
+                      {user.isWinehandelVerified ? '🍷 ✅ Verifiziert' : '🍷 ⏳ Nicht verifiziert'}
+                    </span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                   {user.username || 'N/A'}
@@ -726,6 +800,18 @@ export default function Users() {
                         }`}
                       >
                         {user.isWineryVerified ? '✅ Verifiziert' : '⏳ Verifizieren'}
+                      </button>
+                    )}
+                    {user.isWinehandel && (
+                      <button
+                        onClick={() => handleVerifyWinehandel(user)}
+                        className={`px-3 py-1 rounded text-xs ${
+                          user.isWinehandelVerified
+                            ? 'bg-green-600 hover:bg-green-700 text-white'
+                            : 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                        }`}
+                      >
+                        {user.isWinehandelVerified ? '🍷 ✅ Verifiziert' : '🍷 ⏳ Verifizieren'}
                       </button>
                     )}
                     {!user.isAdmin && (
@@ -862,6 +948,8 @@ export default function Users() {
                           {userDetailsData.user.isBlocked && ' • 🚫 Gesperrt'}
                           {userDetailsData.user.isWinery && ' • 🏰 Weingut'}
                           {userDetailsData.user.isWineryVerified && ' • ✅ Verifiziert'}
+                          {userDetailsData.user.isWinehandel && ' • 🍷 Weinhandel'}
+                          {userDetailsData.user.isWinehandelVerified && ' • ✅ Verifiziert'}
                         </span>
                       </div>
                       <div className="flex justify-between">

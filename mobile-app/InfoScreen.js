@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,13 +6,25 @@ import {
   ScrollView, 
   StyleSheet,
   Platform,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Keyboard
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import OptimizedImage from './components/OptimizedImage';
 
 export default function InfoScreen({ onNavigate, onShowRegister }) {
   const [expandedSections, setExpandedSections] = useState({});
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  // Keyboard-Listener, um den unteren Bereich zu minimieren
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+    };
+  }, []);
 
   const toggleSection = (sectionId) => {
     setExpandedSections(prev => ({
@@ -78,11 +90,7 @@ export default function InfoScreen({ onNavigate, onShowRegister }) {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
+    <View style={styles.container}>
       {/* Subtiler Hintergrund-Gradient für Glassmorphismus-Effekt */}
       <LinearGradient
         colors={[
@@ -106,11 +114,16 @@ export default function InfoScreen({ onNavigate, onShowRegister }) {
         </TouchableOpacity>
       )}
       
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView 
+        style={{ flex: 1, backgroundColor: '#2c2c2c' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 10}
       >
+        <ScrollView 
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: isKeyboardVisible ? 2 : 40 }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Logo - größer und mittig am oberen Rand */}
         <View style={styles.logoContainer}>
           <OptimizedImage 
@@ -164,8 +177,9 @@ export default function InfoScreen({ onNavigate, onShowRegister }) {
             </View>
           ))}
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 

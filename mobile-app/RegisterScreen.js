@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Image, Platform, ScrollView, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { registerUser } from './services/testAuth';
 import { uploadImageToStorage } from './services/database-web';
 import OptimizedImage from './components/OptimizedImage';
+import { getKeyboardAvoidingViewProps } from './utils/keyboardUtils';
 
 export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) {
   const [currentStep, setCurrentStep] = useState(1); // 1-5
@@ -22,6 +23,7 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
     publishProfile: false,
     newsletter: false,
     isWinery: false,
+    isWinehandel: false,
     ageConfirmed: false, // Altersverifizierung (18+)
     termsAccepted: false // AGB/Datenschutz akzeptiert
   });
@@ -40,6 +42,17 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
   const scrollViewRef = useRef(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  // Keyboard-Listener, um den unteren Bereich zu minimieren
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+    };
+  }, []);
 
   const updateFormData = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -213,6 +226,8 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
         newsletter,
         isWinery: formData.isWinery || false,
         isWineryVerified: false, // Wird vom Admin verifiziert
+        isWinehandel: formData.isWinehandel || false,
+        isWinehandelVerified: false, // Wird vom Admin verifiziert
         profilbild: profilbildUrl // Profilbild-URL hinzufügen
       };
       
@@ -431,6 +446,20 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
               ℹ️ Dein Weingut-Profil muss von einem Admin verifiziert werden, bevor es öffentlich sichtbar ist.
             </Text>
           )}
+          
+          <TouchableOpacity
+            style={[styles.checkboxButton, formData.isWinehandel && styles.checkboxButtonActive]}
+            onPress={() => updateFormData('isWinehandel', !formData.isWinehandel)}
+          >
+            <Text style={styles.checkboxText}>
+              {formData.isWinehandel ? '✓' : '○'} 🍷 Ich bin ein Weinhandel
+            </Text>
+          </TouchableOpacity>
+          {formData.isWinehandel && (
+            <Text style={styles.wineryHint}>
+              ℹ️ Dein Weinhandel-Profil muss von einem Admin verifiziert werden, bevor es öffentlich sichtbar ist.
+            </Text>
+          )}
         </View>
       </View>
     );
@@ -535,6 +564,11 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
           </View>
           
           <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Ich bin ein Weinhandel:</Text>
+            <Text style={styles.summaryValue}>{formData.isWinehandel ? 'Ja' : 'Nein'}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Newsletter:</Text>
             <Text style={styles.summaryValue}>{formData.newsletter ? 'Ja' : 'Nein'}</Text>
           </View>
@@ -569,13 +603,12 @@ export default function RegisterScreen({ onRegister, onShowLogin, onNavigate }) 
       )}
       
       <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        style={{ flex: 1, backgroundColor: '#2c2c2c' }}
+        {...getKeyboardAvoidingViewProps(10)}
       >
         <ScrollView
           ref={scrollViewRef}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: isKeyboardVisible ? 2 : 40 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

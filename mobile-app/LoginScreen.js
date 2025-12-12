@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, KeyboardAvoidingView, ScrollView } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, KeyboardAvoidingView, ScrollView, Keyboard } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { loginUser } from './services/testAuth';
 import OptimizedImage from './components/OptimizedImage';
+import { getKeyboardAvoidingViewProps } from './utils/keyboardUtils';
 
 export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
   const [emailOrUsername, setEmailOrUsername] = useState('');
@@ -11,6 +12,17 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
   const passwordRef = useRef(null);
   const emailRef = useRef(null);
   const scrollViewRef = useRef(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  // Keyboard-Listener, um den unteren Bereich zu minimieren
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+    };
+  }, []);
 
   const handleLogin = async () => {
     if (!emailOrUsername || !password) {
@@ -47,10 +59,7 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      {...getKeyboardAvoidingViewProps()}
-    >
+    <View style={styles.container}>
       {/* Subtiler Hintergrund-Gradient für Glassmorphismus-Effekt */}
       <LinearGradient
         colors={[
@@ -74,12 +83,16 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
         </TouchableOpacity>
       )}
       
-      <ScrollView 
-        ref={scrollViewRef}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView 
+        style={{ flex: 1, backgroundColor: '#2c2c2c' }}
+        {...getKeyboardAvoidingViewProps(10)}
       >
+        <ScrollView 
+          ref={scrollViewRef}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: isKeyboardVisible ? 2 : 40 }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Logo - größer und mittig am oberen Rand */}
         <View style={styles.logoContainer}>
           <OptimizedImage 
@@ -162,8 +175,9 @@ export default function LoginScreen({ onLogin, onShowRegister, onNavigate }) {
             )}
           </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
        }
 

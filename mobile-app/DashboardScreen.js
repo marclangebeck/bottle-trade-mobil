@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Platform, RefreshControl, Modal, Dimensions } from 'react-native';
 import { ImageBackground } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,27 +61,34 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
   const [selectedWineGroup, setSelectedWineGroup] = useState(null); // Für Auswahl-Modal bei mehreren Weinen
   const [isWineSelectionModalVisible, setIsWineSelectionModalVisible] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
+  
+  // Ref für absolut stabile Koordinaten-Objekte - werden NUR beim Laden erstellt und nie mehr geändert
+  const stableCoordinatesRef = useRef(new Map());
 
   // Funktion zum Gruppieren von Weinen nach Koordinaten
+  // Gruppiert nur Weine mit exakt derselben PLZ, um Positionsverschiebungen zu vermeiden
   const groupWinesByLocation = (wines) => {
     const groups = [];
-    const COORD_TOLERANCE = 0.0001; // ~11 Meter Toleranz
     
     wines.forEach(wine => {
-      // Suche nach bestehender Gruppe mit ähnlichen Koordinaten
+      // Suche nach bestehender Gruppe mit derselben PLZ
+      // Dies stellt sicher, dass nur Weine aus derselben PLZ-Region gruppiert werden
       let foundGroup = groups.find(group => 
-        Math.abs(group.latitude - wine.latitude) < COORD_TOLERANCE &&
-        Math.abs(group.longitude - wine.longitude) < COORD_TOLERANCE
+        group.ownerZipCode === wine.ownerZipCode &&
+        Math.abs(group.latitude - wine.latitude) < 0.00001 // Zusätzliche Sicherheitsprüfung
       );
       
       if (foundGroup) {
         // Füge Wein zur bestehenden Gruppe hinzu
+        // WICHTIG: Behalte die ursprünglichen Koordinaten der Gruppe bei
+        // Keine Durchschnittsberechnung, um Positionsverschiebungen zu vermeiden
         foundGroup.wines.push(wine);
       } else {
-        // Erstelle neue Gruppe
+        // Erstelle neue Gruppe mit exakten Koordinaten
         groups.push({
           latitude: wine.latitude,
           longitude: wine.longitude,
+          ownerZipCode: wine.ownerZipCode, // Speichere PLZ für Gruppierung
           wines: [wine]
         });
       }
@@ -163,11 +170,14 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
             console.log(`⚠️ Keine Koordinaten für PLZ ${wine.ownerZipCode} (Wein: ${wine.name})`);
             return null;
           }
-          console.log(`✅ Wein ${wine.name} (PLZ: ${wine.ownerZipCode}) → ${coords.lat}, ${coords.lon}`);
+          // Runde Koordinaten auf 6 Dezimalstellen für präzise, stabile Position (~10cm Genauigkeit)
+          const lat = Math.round(coords.lat * 1000000) / 1000000;
+          const lon = Math.round(coords.lon * 1000000) / 1000000;
+          console.log(`✅ Wein ${wine.name} (PLZ: ${wine.ownerZipCode}) → ${lat}, ${lon}`);
           return {
             ...wine,
-            latitude: coords.lat,
-            longitude: coords.lon
+            latitude: lat,
+            longitude: lon
           };
         })
         .filter(wine => wine !== null && wine.latitude && wine.longitude);
@@ -177,8 +187,35 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
       
       // Gruppiere Weine nach Koordinaten (mit Toleranz für Rundungsfehler)
       const grouped = groupWinesByLocation(winesWithCoords);
-      console.log(`📍 ${grouped.length} Pin-Positionen (${winesWithCoords.length} Weine)`);
-      setWineGroups(grouped);
+      
+      // Erstelle absolut stabile Koordinaten-Objekte EINMAL beim Laden
+      // Diese werden nie mehr geändert, auch nicht beim Zoomen
+      // WICHTIG: Koordinaten werden direkt aus der PLZ berechnet und bleiben für immer gleich
+      const stableGroups = grouped.map((group) => {
+        // Runde auf 6 Dezimalstellen für absolute Stabilität (~10cm Genauigkeit)
+        // WICHTIG: Verwende parseFloat und toFixed für präzise Rundung
+        const lat = parseFloat(Number(group.latitude).toFixed(6));
+        const lon = parseFloat(Number(group.longitude).toFixed(6));
+        
+        // DEBUG: Log die Koordinaten beim Laden
+        console.log(`📍 Gruppe geladen: PLZ ${group.ownerZipCode}, Koordinaten: ${lat}, ${lon}`);
+        
+        // Erstelle Koordinaten-Objekt EINMAL - dieses Objekt wird NIE mehr geändert
+        // WICHTIG: Direkt im State gespeichert, nicht in einem Ref
+        const coordinate = { latitude: lat, longitude: lon };
+        
+        return {
+          ...group,
+          latitude: lat, // Überschreibe mit gerundeten Werten
+          longitude: lon,
+          coordinate, // Verwende das Koordinaten-Objekt
+          // Stabiler Key basierend auf Koordinaten
+          stableKey: `wine-${lat}-${lon}-${group.ownerZipCode || 'unknown'}`,
+        };
+      });
+      
+      console.log(`📍 ${stableGroups.length} Pin-Positionen (${winesWithCoords.length} Weine)`);
+      setWineGroups(stableGroups);
       
       // Setze Kartenregion basierend auf User-PLZ
       if (me?.zipCode) {
@@ -187,8 +224,8 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
           setMapRegion({
             latitude: userCoords.lat,
             longitude: userCoords.lon,
-            latitudeDelta: 2.0, // Zoom-Level (größerer Wert = weiter herausgezoomt)
-            longitudeDelta: 2.0,
+            latitudeDelta: 0.10, // Zoom-Level für unmittelbare Umgebung (~10 km Radius)
+            longitudeDelta: 0.15,
           });
         }
       } else {
@@ -196,8 +233,8 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
         setMapRegion({
           latitude: 51.165,
           longitude: 10.451,
-          latitudeDelta: 5.0,
-          longitudeDelta: 5.0,
+          latitudeDelta: 2.0, // Reduziert von 5.0 für bessere Übersicht
+          longitudeDelta: 2.0,
         });
       }
     } catch (e) {
@@ -424,7 +461,17 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
                   provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                   style={styles.map}
                   initialRegion={mapRegion}
-                  onRegionChangeComplete={setMapRegion}
+                  onRegionChangeComplete={(region) => {
+                    // Aktualisiere nur die Region - Marker bleiben unverändert
+                    // DEBUG: Prüfe ob sich Koordinaten ändern
+                    if (wineGroups.length > 0) {
+                      const firstGroup = wineGroups[0];
+                      console.log(`🗺️ Region geändert. Zoom: ${region.latitudeDelta.toFixed(4)}`);
+                      console.log(`📍 Marker-Koordinaten (sollten stabil sein): ${firstGroup.latitude}, ${firstGroup.longitude}`);
+                      console.log(`📍 Koordinaten-Objekt:`, firstGroup.coordinate);
+                    }
+                    setMapRegion(region);
+                  }}
                   showsUserLocation={false}
                   showsMyLocationButton={false}
                   mapType="standard"
@@ -436,41 +483,64 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
                     // Verhindere ScrollView-Scroll während Kartenbewegung
                   }}
                 >
-                  {wineGroups.map((group, groupIndex) => (
-                    <Marker
-                      key={`group-${groupIndex}-${group.latitude}-${group.longitude}`}
-                      coordinate={{
-                        latitude: group.latitude,
-                        longitude: group.longitude,
-                      }}
-                      onPress={() => {
-                        console.log(`📍 Pin geklickt: ${group.wines.length} Wein(e) an Position ${group.latitude}, ${group.longitude}`);
-                        if (group.wines.length === 1) {
-                          // Nur ein Wein: Direkt Modal öffnen
-                          console.log('✅ Öffne direktes Wein-Modal');
-                          setSelectedWine(group.wines[0]);
-                          setIsWineModalVisible(true);
-                        } else {
-                          // Mehrere Weine: Auswahl-Modal öffnen
-                          console.log('✅ Öffne Auswahl-Modal für', group.wines.length, 'Weine');
-                          setSelectedWineGroup(group);
-                          setIsWineSelectionModalVisible(true);
-                        }
-                      }}
-                    >
-                      <View style={styles.modernPinContainer}>
-                        <View style={styles.modernPin}>
-                          {group.wines.length > 1 && (
-                            <View style={styles.pinBadge}>
-                              <Text style={styles.pinBadgeText}>{group.wines.length}</Text>
-                            </View>
-                          )}
+                  {wineGroups.map((group) => {
+                    // Verwende die Koordinaten direkt aus dem group-Objekt
+                    // Diese wurden EINMAL beim Laden erstellt, eingefroren und bleiben für immer gleich
+                    // KEINE Neuberechnung, KEIN neues Objekt - direkt aus dem State
+                    const coordinate = group.coordinate;
+                    
+                    if (!coordinate) {
+                      console.warn('⚠️ Keine Koordinaten für Gruppe:', group);
+                      return null;
+                    }
+                    
+                    // WICHTIG: Koordinaten direkt aus dem group-Objekt verwenden
+                    // Diese wurden EINMAL beim Laden berechnet und bleiben für immer gleich
+                    // Problem: Pin wandert trotz stabiler Koordinaten - liegt an react-native-maps Rendering
+                    // Lösung: anchor-Prop entfernen und Koordinaten direkt übergeben
+                    return (
+                      <Marker
+                        key={group.stableKey || `group-${group.latitude}-${group.longitude}`}
+                        coordinate={{
+                          latitude: group.latitude, // Direkt aus dem State, nicht aus coordinate-Objekt
+                          longitude: group.longitude,
+                        }}
+                        // anchor: Spitze des Pins (unten) soll auf Koordinaten zeigen
+                        // Pin-Container: 32px breit, 48px hoch
+                        // anchor: {x: 0.5 (Mitte), y: 1.0 (ganz unten = Spitze)}
+                        anchor={{ x: 0.5, y: 1.0 }}
+                        tracksViewChanges={false} // Verhindert Neurendering beim Zoomen
+                        flat={true} // Marker bleibt flach auf der Karte (2D, nicht 3D)
+                        // WICHTIG: Keine centerOffset - kann zu Verschiebungen führen
+                        onPress={() => {
+                          console.log(`📍 Pin geklickt: ${group.wines.length} Wein(e) an Position ${group.latitude}, ${group.longitude}`);
+                          if (group.wines.length === 1) {
+                            // Nur ein Wein: Direkt Modal öffnen
+                            console.log('✅ Öffne direktes Wein-Modal');
+                            setSelectedWine(group.wines[0]);
+                            setIsWineModalVisible(true);
+                          } else {
+                            // Mehrere Weine: Auswahl-Modal öffnen
+                            console.log('✅ Öffne Auswahl-Modal für', group.wines.length, 'Weine');
+                            setSelectedWineGroup(group);
+                            setIsWineSelectionModalVisible(true);
+                          }
+                        }}
+                      >
+                        <View style={styles.modernPinContainer}>
+                          <View style={styles.modernPin}>
+                            {group.wines.length > 1 && (
+                              <View style={styles.pinBadge}>
+                                <Text style={styles.pinBadgeText}>{group.wines.length}</Text>
+                              </View>
+                            )}
+                          </View>
+                          <View style={styles.modernPinPoint} />
+                          <View style={styles.modernPinShadow} />
                         </View>
-                        <View style={styles.modernPinPoint} />
-                        <View style={styles.modernPinShadow} />
-                      </View>
-                    </Marker>
-                  ))}
+                      </Marker>
+                    );
+                  }).filter(Boolean)}
                 </MapView>
               ) : (
                 <View style={styles.mapPlaceholder}>
@@ -653,11 +723,6 @@ export default function DashboardScreen({ onNavigate, onLogout, isAdmin = false,
                       </ScrollView>
                     );
                   })()}
-                  ) : (
-                    <View style={styles.modalPlaceholderImage}>
-                      <Text style={styles.modalPlaceholderText}>🍷</Text>
-                    </View>
-                  )}
                 </View>
 
                 {/* Wein-Informationen */}

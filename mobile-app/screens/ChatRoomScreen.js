@@ -9,7 +9,8 @@ import {
   Platform,
   StatusBar,
   Alert,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Keyboard
 } from 'react-native';
 import DynamicHamburgerMenu from '../DynamicHamburgerMenu';
 import Footer from '../Footer';
@@ -17,6 +18,7 @@ import BottomNavigation from '../components/BottomNavigation';
 import ProVersionButton from '../components/ProVersionButton';
 import OptimizedImage from '../components/OptimizedImage';
 import { getCurrentUser } from '../services/testAuth';
+import { getKeyboardAvoidingViewProps } from '../utils/keyboardUtils';
 
 export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount = 0, messages = [], onAddMessage, onUpdateMessage, onMarkChatAsRead, isLoggedIn = false, isPro = false }) {
   // VERSION: 2.0 - Fix für undefined reactions
@@ -26,8 +28,19 @@ export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState(null); // State für ausgewählte Nachricht
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const scrollViewRef = useRef(null);
   const messageInputRef = useRef(null);
+
+  // Keyboard-Listener, um den unteren Bereich zu minimieren
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub?.remove();
+      hideSub?.remove();
+    };
+  }, []);
   
   // WICHTIG: Prüfe, ob der aktuelle User ein Teilnehmer des Chats ist
   // 1-zu-1 Kommunikation darf nicht von Dritten (auch nicht Admins) eingesehen werden
@@ -305,14 +318,14 @@ export default function ChatRoomScreen({ onNavigate, onLogout, chat, unreadCount
           
           {/* Chat-Bereich - Scrollt unter dem Header */}
           <KeyboardAvoidingView
-            style={styles.chatContainer}
-            {...getKeyboardAvoidingViewProps()}
+            style={[styles.chatContainer, { backgroundColor: '#2c2c2c' }]}
+            {...getKeyboardAvoidingViewProps(10)}
           >
             {/* Messages */}
             <ScrollView 
               ref={scrollViewRef}
               style={styles.messagesContainer}
-              contentContainerStyle={styles.messagesContentContainer}
+              contentContainerStyle={[styles.messagesContentContainer, { paddingBottom: isKeyboardVisible ? 2 : 20 }]}
               showsVerticalScrollIndicator={false}
             >
               {isLoading ? (

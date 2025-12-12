@@ -3,12 +3,11 @@
 // - getKeyboardAvoidingViewProps: Einheitliche KAV-Konfiguration für iOS/Android
 
 import { Platform, findNodeHandle, Dimensions } from 'react-native';
-import { requestAnimationFrame } from 'react-native/Libraries/Renderer/shims/ReactNative';
 
 // Scrollt zum aktiven Input auf eine einheitliche Zielposition (zentrierter Eindruck).
 // targetCenterRatio definiert, wo die Feldmitte landen soll (0.38 ≈ weiter oberhalb der Mitte).
 // delayMs sorgt dafür, dass nach Keyboard-/Layout-Updates gemessen wird.
-export const scrollToInput = (scrollViewRef, inputRef = null, targetCenterRatio = 0.38, delayMs = 40) => {
+const scrollToInput = (scrollViewRef, inputRef = null, targetCenterRatio = 0.38, delayMs = 40) => {
   try {
     const scrollView = scrollViewRef?.current;
     const input = inputRef?.current;
@@ -51,25 +50,29 @@ export const scrollToInput = (scrollViewRef, inputRef = null, targetCenterRatio 
 
     // Nach dem Fokus kann sich das Layout (Keyboard/Padding) noch ändern.
     // Zwei Animation Frames + kurzer Timeout sorgen für stabile Koordinaten.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+    // Verwende setTimeout als Fallback, da requestAnimationFrame in React Native anders funktioniert
+    setTimeout(() => {
+      setTimeout(() => {
         if (delayMs > 0) {
           setTimeout(performScroll, delayMs);
         } else {
           performScroll();
         }
-      });
-    });
+      }, 16); // ~1 Frame bei 60fps
+    }, 16); // ~1 Frame bei 60fps
   } catch (error) {
     console.log('scrollToInput error:', error);
   }
 };
 
 // Einheitliche KeyboardAvoidingView-Props (Offset kann bei Bedarf angepasst werden)
-export const getKeyboardAvoidingViewProps = (offset = 120) => ({
-  behavior: Platform.OS === 'ios' ? 'padding' : 'height',
-  keyboardVerticalOffset: offset,
-  enabled: true,
-});
+const getKeyboardAvoidingViewProps = (offset = 120) => {
+  return {
+    behavior: Platform.OS === 'ios' ? 'padding' : 'height',
+    keyboardVerticalOffset: offset,
+    enabled: true,
+  };
+};
 
-
+// Named exports am Ende für bessere Hot Reload-Kompatibilität
+export { scrollToInput, getKeyboardAvoidingViewProps };

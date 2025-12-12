@@ -4043,6 +4043,61 @@ export const verifyWinery = async (wineryId, isVerified = true) => {
 };
 
 /**
+ * Aktualisiert ein Weinhandel-Unternehmen
+ * @param {string} winehandelId - Weinhandel-ID
+ * @param {Object} updates - Zu aktualisierende Felder
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const updateWinehandel = async (winehandelId, updates) => {
+  try {
+    const winehandelRef = doc(db, 'winehandel', winehandelId);
+    await updateDoc(winehandelRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Weinhandel aktualisiert:', winehandelId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Aktualisieren des Weinhandels:', error);
+    throw error;
+  }
+};
+
+/**
+ * Löscht ein Weinhandel-Profil
+ * @param {string} winehandelId - Weinhandel-ID
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const deleteWinehandel = async (winehandelId) => {
+  try {
+    await deleteDoc(doc(db, 'winehandel', winehandelId));
+    console.log('✅ Weinhandel gelöscht:', winehandelId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Löschen des Weinhandels:', error);
+    throw error;
+  }
+};
+
+/**
+ * Verifiziert ein Weinhandel-Unternehmen (nur für Admins)
+ * @param {string} winehandelId - Weinhandel-ID
+ * @param {boolean} isVerified - Verifizierungsstatus
+ * @returns {Promise<boolean>} Erfolg
+ */
+export const verifyWinehandel = async (winehandelId, isVerified = true) => {
+  try {
+    await updateWinehandel(winehandelId, { isVerified });
+    console.log(`✅ Weinhandel ${isVerified ? 'verifiziert' : 'Verifizierung entfernt'}:`, winehandelId);
+    return true;
+  } catch (error) {
+    console.error('❌ Fehler beim Verifizieren des Weinhandels:', error);
+    throw error;
+  }
+};
+
+/**
  * Subscription für verifizierte Weingüter
  * @param {Function} callback - Callback-Funktion
  * @returns {Function} Unsubscribe-Funktion
@@ -4074,6 +4129,121 @@ export const subscribeVerifiedWineries = (callback) => {
     });
   } catch (error) {
     console.error('❌ Fehler beim Einrichten der Weingüter-Subscription:', error);
+    callback([]);
+    return () => {};
+  }
+};
+
+// ===== WEINHANDEL FUNKTIONEN =====
+
+/**
+ * Holt ein Weinhandel-Unternehmen nach Owner-ID
+ * @param {string} ownerId - Owner-UID
+ * @returns {Promise<Object|null>} Weinhandel-Daten
+ */
+export const getWinehandelByOwner = async (ownerId) => {
+  try {
+    const winehandelQuery = query(
+      collection(db, 'winehandel'),
+      where('ownerId', '==', ownerId)
+    );
+    const querySnapshot = await getDocs(winehandelQuery);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const winehandelDoc = querySnapshot.docs[0];
+    return { id: winehandelDoc.id, ...winehandelDoc.data() };
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen des Weinhandels nach Owner:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt alle verifizierten Weinhandel-Unternehmen
+ * @returns {Promise<Array>} Liste der Weinhandel-Unternehmen
+ */
+export const getVerifiedWinehandel = async () => {
+  try {
+    const winehandelQuery = query(
+      collection(db, 'winehandel'),
+      where('isVerified', '==', true)
+    );
+    const querySnapshot = await getDocs(winehandelQuery);
+    
+    const winehandel = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // Clientseitig nach Name sortieren (vermeidet Firestore-Index)
+    return winehandel.sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen der verifizierten Weinhandel-Unternehmen:', error);
+    throw error;
+  }
+};
+
+/**
+ * Holt alle Weinhandel-Unternehmen (auch nicht verifizierte) - nur für Admins
+ * @returns {Promise<Array>} Liste der Weinhandel-Unternehmen
+ */
+export const getAllWinehandel = async () => {
+  try {
+    const winehandelQuery = query(
+      collection(db, 'winehandel'),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(winehandelQuery);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('❌ Fehler beim Abrufen aller Weinhandel-Unternehmen:', error);
+    throw error;
+  }
+};
+
+/**
+ * Subscription für verifizierte Weinhandel-Unternehmen
+ * @param {Function} callback - Callback-Funktion
+ * @returns {Function} Unsubscribe-Funktion
+ */
+export const subscribeVerifiedWinehandel = (callback) => {
+  try {
+    const winehandelQuery = query(
+      collection(db, 'winehandel'),
+      where('isVerified', '==', true)
+    );
+
+    return onSnapshot(winehandelQuery, (snapshot) => {
+      const winehandel = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Clientseitig nach Name sortieren (vermeidet Firestore-Index)
+      const sortedWinehandel = winehandel.sort((a, b) => {
+        const nameA = (a.name || '').toLowerCase();
+        const nameB = (b.name || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+      
+      callback(sortedWinehandel);
+    }, (error) => {
+      console.error('❌ Fehler bei Weinhandel-Subscription:', error);
+      callback([]);
+    });
+  } catch (error) {
+    console.error('❌ Fehler beim Einrichten der Weinhandel-Subscription:', error);
     callback([]);
     return () => {};
   }

@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Wines from './pages/Wines';
 import Wineries from './pages/Wineries';
+import Winehandel from './pages/Winehandel';
 import DataManagement from './pages/DataManagement';
 import Surveys from './pages/Surveys';
 import Newsletter from './pages/Newsletter';
@@ -13,6 +14,7 @@ import SystemMessages from './pages/SystemMessages';
 import Shop from './pages/Shop';
 import Orders from './pages/Orders';
 import Trades from './pages/Trades';
+import Blackboard from './pages/Blackboard';
 import Layout from './components/Layout';
 
 const queryClient = new QueryClient();
@@ -88,6 +90,7 @@ function AppContent() {
         <Route path="/users" element={<Users />} />
         <Route path="/wines" element={<Wines />} />
         <Route path="/wineries" element={<Wineries />} />
+        <Route path="/winehandel" element={<Winehandel />} />
         <Route path="/data-management" element={<DataManagement />} />
         <Route path="/surveys" element={<Surveys />} />
         <Route path="/newsletter" element={<Newsletter />} />
@@ -95,6 +98,7 @@ function AppContent() {
         <Route path="/shop" element={<Shop />} />
         <Route path="/orders" element={<Orders />} />
         <Route path="/trades" element={<Trades />} />
+        <Route path="/blackboard" element={<Blackboard />} />
       </Routes>
     </Layout>
   );

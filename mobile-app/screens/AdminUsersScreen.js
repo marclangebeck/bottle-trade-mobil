@@ -23,7 +23,9 @@ import { db } from '../config/firebase-web';
 import { 
   updateUser, 
   getWineryByOwner, 
-  verifyWinery, 
+  verifyWinery,
+  getWinehandelByOwner,
+  verifyWinehandel, 
   getAllWinesByOwner,
   getChatsForUser,
   getTradeRequestsForUser,
@@ -210,6 +212,56 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
               ));
               
               Alert.alert('Erfolg', `User wurde ${!isVerified ? 'als Weingut verifiziert' : 'Verifizierung entfernt'}!`);
+            } catch (error) {
+              console.error('❌ Fehler beim Verifizieren:', error);
+              Alert.alert('Fehler', `User konnte nicht ${action} werden.`);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleVerifyWinehandel = async (user) => {
+    const isVerified = user.isWinehandelVerified || false;
+    const action = isVerified ? 'Verifizierung entfernen' : 'als Weinhandel verifizieren';
+    
+    Alert.alert(
+      `Weinhandel ${isVerified ? 'Verifizierung entfernen' : 'verifizieren'}`,
+      `Möchten Sie den User "${user.username || user.email}" wirklich ${action}?`,
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        { text: action === 'als Weinhandel verifizieren' ? 'Verifizieren' : 'Verifizierung entfernen', 
+          style: action === 'als Weinhandel verifizieren' ? 'default' : 'destructive', 
+          onPress: async () => {
+            try {
+              // Update User
+              await updateUser(user.uid, {
+                isWinehandelVerified: !isVerified
+              });
+              
+              // Wenn verifiziert wird, verifiziere auch das Weinhandel-Profil (falls vorhanden)
+              if (!isVerified) {
+                const winehandel = await getWinehandelByOwner(user.uid);
+                if (winehandel) {
+                  await verifyWinehandel(winehandel.id, true);
+                }
+              } else {
+                // Wenn Verifizierung entfernt wird, entferne auch vom Weinhandel-Profil
+                const winehandel = await getWinehandelByOwner(user.uid);
+                if (winehandel) {
+                  await verifyWinehandel(winehandel.id, false);
+                }
+              }
+              
+              // Aktualisiere lokalen State
+              setUsers(prev => prev.map(u => 
+                u.id === user.id 
+                  ? { ...u, isWinehandelVerified: !isVerified }
+                  : u
+              ));
+              
+              Alert.alert('Erfolg', `User wurde ${!isVerified ? 'als Weinhandel verifiziert' : 'Verifizierung entfernt'}!`);
             } catch (error) {
               console.error('❌ Fehler beim Verifizieren:', error);
               Alert.alert('Fehler', `User konnte nicht ${action} werden.`);
@@ -629,6 +681,8 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
                     {users.filter(u => u.isBlocked).length > 0 && ` • ${users.filter(u => u.isBlocked).length} Gesperrt`}
                     {users.filter(u => u.isWinery).length > 0 && ` • ${users.filter(u => u.isWinery).length} Weingut(e)`}
                     {users.filter(u => u.isWinery && u.isWineryVerified).length > 0 && ` • ${users.filter(u => u.isWinery && u.isWineryVerified).length} Verifiziert`}
+                    {users.filter(u => u.isWinehandel).length > 0 && ` • ${users.filter(u => u.isWinehandel).length} Weinhandel`}
+                    {users.filter(u => u.isWinehandel && u.isWinehandelVerified).length > 0 && ` • ${users.filter(u => u.isWinehandel && u.isWinehandelVerified).length} Verifiziert`}
                     {users.filter(u => !u.isAdmin && (u.isActive || u.status === 'active')).length > 0 && ` • ${users.filter(u => !u.isAdmin && (u.isActive || u.status === 'active')).length} Aktiv`}
                     {users.filter(u => !u.isAdmin && (!u.isActive && u.status !== 'active')).length > 0 && ` • ${users.filter(u => !u.isAdmin && (!u.isActive && u.status !== 'active')).length} Inaktiv`}
                   </Text>
@@ -696,6 +750,13 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
                                   </Text>
                                 </View>
                               )}
+                              {user.isWinehandel && (
+                                <View style={[styles.wineryBadge, user.isWinehandelVerified && styles.wineryBadgeVerified]}>
+                                  <Text style={styles.wineryBadgeText}>
+                                    {user.isWinehandelVerified ? '🍷 ✅ Verifiziert' : '🍷 ⏳ Nicht verifiziert'}
+                                  </Text>
+                                </View>
+                              )}
                             </View>
                             <Text style={styles.userEmail}>{user.email || 'Keine E-Mail'}</Text>
                             <Text style={styles.userDetails}>
@@ -722,6 +783,18 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
                                 >
                                   <Text style={styles.actionButtonText}>
                                     {user.isWineryVerified ? '✅ Verifiziert' : '⏳ Verifizieren'}
+                                  </Text>
+                                </TouchableOpacity>
+                              ) : user.isWinehandel ? (
+                                <TouchableOpacity 
+                                  style={[
+                                    styles.actionButton, 
+                                    user.isWinehandelVerified && styles.actionButtonVerified
+                                  ]}
+                                  onPress={() => handleVerifyWinehandel(user)}
+                                >
+                                  <Text style={styles.actionButtonText}>
+                                    {user.isWinehandelVerified ? '🍷 ✅ Verifiziert' : '🍷 ⏳ Verifizieren'}
                                   </Text>
                                 </TouchableOpacity>
                               ) : (
@@ -895,6 +968,8 @@ export default function AdminUsersScreen({ onNavigate, onLogout, isLoggedIn = fa
                       {userDetailsData.user.isBlocked && ' • 🚫 Gesperrt'}
                       {userDetailsData.user.isWinery && ' • 🏰 Weingut'}
                       {userDetailsData.user.isWineryVerified && ' • ✅ Verifiziert'}
+                      {userDetailsData.user.isWinehandel && ' • 🍷 Weinhandel'}
+                      {userDetailsData.user.isWinehandelVerified && ' • ✅ Verifiziert'}
                     </Text>
                   </View>
                   <View style={styles.detailsRow}>

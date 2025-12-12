@@ -351,7 +351,7 @@ export default function WeinregalBefuellenScreen({ onNavigate, onLogout, unreadC
     }
   };
 
-  const keyboardProps = getKeyboardAvoidingViewProps(60); // nochmals geringer Offset
+  const keyboardProps = getKeyboardAvoidingViewProps(10); // minimaler Offset für maximalen sichtbaren Bereich
   const dynamicPaddingBottom = isKeyboardVisible ? 2 : 150; // nochmals weniger Leerraum bei offener Tastatur
 
   return (

@@ -69,6 +69,16 @@ export default function Layout({ children, onLogout }: LayoutProps) {
                   Weingüter
                 </Link>
                 <Link
+                  to="/winehandel"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActive('/winehandel')
+                      ? 'bg-gold text-dark-bg'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
+                >
+                  Weinhandel
+                </Link>
+                <Link
                   to="/surveys"
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                     isActive('/surveys')
@@ -127,6 +137,16 @@ export default function Layout({ children, onLogout }: LayoutProps) {
                   }`}
                 >
                   Trades
+                </Link>
+                <Link
+                  to="/blackboard"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActive('/blackboard')
+                      ? 'bg-gold text-dark-bg'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
+                >
+                  Schwarzes Brett
                 </Link>
                 <Link
                   to="/data-management"

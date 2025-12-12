@@ -170,6 +170,14 @@ export default function AdminDashboardScreen({
       bgColor: '#FFF8DC' // Gold/Gelb
     },
     {
+      id: 'weinhandel',
+      title: 'Weinhandel-Verwaltung',
+      description: 'Weinhandel-Unternehmen verwalten und verifizieren',
+      icon: '🍷',
+      color: '#8B4513',
+      bgColor: '#EFEBE9' // Hellbraun/Beige
+    },
+    {
       id: 'wine-ki',
       title: 'Weinregal KI',
       description: 'Weinregal mit KI-Analyse befüllen',
@@ -276,6 +284,9 @@ export default function AdminDashboardScreen({
         break;
       case 'wineries':
         onNavigate('admin-wineries');
+        break;
+      case 'weinhandel':
+        onNavigate('admin-weinhandel');
         break;
       case 'wine-ki':
         onNavigate('weinregal-ki');

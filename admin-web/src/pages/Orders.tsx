@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, query, orderBy, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, query, orderBy, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 interface Order {
@@ -67,6 +67,21 @@ export default function Orders() {
     } catch (error) {
       console.error('Fehler beim Aktualisieren:', error);
       alert('Fehler beim Aktualisieren des Status');
+    }
+  };
+
+  const handleDelete = async (orderId: string) => {
+    const confirmed = window.confirm('Willst du diese Bestellung wirklich löschen?');
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, 'orders', orderId));
+      alert('Bestellung wurde gelöscht.');
+      setSelectedOrder((prev) => (prev?.id === orderId ? null : prev));
+      loadOrders();
+    } catch (error) {
+      console.error('Fehler beim Löschen der Bestellung:', error);
+      alert('Fehler beim Löschen der Bestellung');
     }
   };
 
@@ -154,6 +169,12 @@ export default function Orders() {
                       >
                         Details
                       </button>
+                      <button
+                        onClick={() => handleDelete(order.id)}
+                        className="px-3 py-1 bg-red-700 hover:bg-red-600 text-white rounded text-sm"
+                      >
+                        Löschen
+                      </button>
                       <select
                         value={order.status}
                         onChange={(e) => handleStatusChange(order.id, e.target.value)}
@@ -206,6 +227,12 @@ export default function Orders() {
               </div>
             </div>
             <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => selectedOrder && handleDelete(selectedOrder.id)}
+                className="px-4 py-2 bg-red-700 hover:bg-red-600 text-white rounded mr-3"
+              >
+                Löschen
+              </button>
               <button
                 onClick={() => setSelectedOrder(null)}
                 className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded"

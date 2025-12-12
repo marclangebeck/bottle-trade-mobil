@@ -89,6 +89,14 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
       gradientColors: ['rgba(218, 165, 32, 0.15)', 'rgba(218, 165, 32, 0.05)'],
     },
     {
+      id: 'weinhandel',
+      title: 'Weinhandel',
+      icon: '🍷',
+      description: 'Entdecke Weinhandel',
+      color: '#8B4513', // Braun
+      gradientColors: ['rgba(139, 69, 19, 0.15)', 'rgba(139, 69, 19, 0.05)'],
+    },
+    {
       id: 'statistiken',
       title: 'Statistiken',
       icon: '📊',
@@ -113,6 +121,11 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
       // Navigiere zum WeingueterScreen
       if (onNavigate) {
         onNavigate('weingueter');
+      }
+    } else if (section.id === 'weinhandel') {
+      // Navigiere zum WeinhandelScreen
+      if (onNavigate) {
+        onNavigate('weinhandel');
       }
     } else if (section.id === 'statistiken') {
       // Navigiere zum StatistikScreen
@@ -318,6 +331,11 @@ export default function CommunityScreen({ onNavigate, onLogout, isAdmin = false,
                 <View style={styles.tilesRow}>
                   <ModernCommunityCard section={communitySections[2]} />
                   <ModernCommunityCard section={communitySections[3]} />
+                </View>
+
+                {/* Zeile 3 */}
+                <View style={styles.tilesRow}>
+                  <ModernCommunityCard section={communitySections[4]} />
                 </View>
               </View>
             </View>
